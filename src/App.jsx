@@ -52,6 +52,49 @@ if (typeof window !== 'undefined' && !window.storage) {
 // calcType: 'percentMRC' = rate x monthly plan charge, 'percentPrice' = rate x sale price,
 // 'flat' = fixed $ per unit (qty multiplies), 'manual' = rep enters the $ amount directly
 
+/* ============================================================
+ *  TEAM CONFIG — shared Monthly Goals & SPIFFs, read by every device.
+ *  This is a narrow, deliberately low-stakes sync: it holds ONLY goals
+ *  and SPIFFs (target numbers, category names, dollar amounts) — never
+ *  customer data, never sales. Sales and customers stay fully local,
+ *  exactly as before.
+ *
+ *  Paste your Supabase project's values here. Run team-config-setup.sql
+ *  in your Supabase project first — same project as before is fine.
+ * ============================================================ */
+const SUPABASE_URL = 'https://tnjoisvbifehakjrkafh.supabase.co';
+const SUPABASE_ANON_KEY = 'sb_publishable_G1soiy7w_MUYayal6HH2IQ_YCKxk1qo';
+const SUPABASE_READY = SUPABASE_URL.startsWith('http') && SUPABASE_ANON_KEY.length > 20;
+
+function cleanUrl(u) {
+  return (u || '').trim().replace(/\/+$/, '');
+}
+
+async function fetchTeamConfig() {
+  const url = `${cleanUrl(SUPABASE_URL)}/rest/v1/team_config?id=eq.1&select=goals,spiffs,passphrase,updated_at`;
+  const res = await fetch(url, { headers: { apikey: SUPABASE_ANON_KEY } });
+  if (!res.ok) throw new Error(`Couldn't reach team config (${res.status})`);
+  const rows = await res.json();
+  return rows?.[0] || null;
+}
+
+async function publishTeamConfig(goals, spiffs) {
+  const url = `${cleanUrl(SUPABASE_URL)}/rest/v1/team_config?id=eq.1`;
+  const res = await fetch(url, {
+    method: 'PATCH',
+    headers: {
+      apikey: SUPABASE_ANON_KEY, 'Content-Type': 'application/json',
+      Prefer: 'return=minimal',
+    },
+    body: JSON.stringify({ goals, spiffs }),
+  });
+  if (!res.ok) {
+    const t = await res.text().catch(() => '');
+    throw new Error(t || `Couldn't publish (${res.status})`);
+  }
+  return true;
+}
+
 const DEFAULT_CATEGORIES = [
   { name: 'Postpaid Rate Plan', calcType: 'percentMRC', rate: 0.5 },
   { name: 'Voice Line', calcType: 'percentMRC', rate: 0.5, hasQty: true },
@@ -1798,6 +1841,11 @@ export default function App() {
   const [editingGoalId, setEditingGoalId] = useState(null);
   const backupFileRef = React.useRef(null);
   const [backupError, setBackupError] = useState('');
+  const [teamConfigStatus, setTeamConfigStatus] = useState('idle'); // idle | syncing | synced | error
+  const [teamConfigError, setTeamConfigError] = useState('');
+  const [teamConfigUpdatedAt, setTeamConfigUpdatedAt] = useState(null);
+  const [publishPassphrase, setPublishPassphrase] = useState('');
+  const [publishBusy, setPublishBusy] = useState(false);
   const [toast, setToast] = useState('');
   const [showRates, setShowRates] = useState(false);
   const rateTapCountRef = React.useRef(0);
@@ -1916,6 +1964,25 @@ export default function App() {
 
     const cu = await safeGet('customers', false);
     if (cu) { try { setCustomers(JSON.parse(cu.value)); } catch (e) {} }
+
+    // Pull the shared Monthly Goals & SPIFFs, if configured. Failing quietly
+    // here is intentional — no internet or no Supabase setup yet shouldn't
+    // block the app or wipe out whatever goals/SPIFFs are already saved locally.
+    if (SUPABASE_READY) {
+      setTeamConfigStatus('syncing');
+      try {
+        const row = await fetchTeamConfig();
+        if (row) {
+          if (row.goals && typeof row.goals === 'object') { setGoals(row.goals); await tryWrite('goals', row.goals, false); }
+          if (Array.isArray(row.spiffs)) { setSpiffs(row.spiffs); await tryWrite('spiffs', row.spiffs, false); }
+          setTeamConfigUpdatedAt(row.updated_at || null);
+        }
+        setTeamConfigStatus('synced');
+      } catch (e) {
+        setTeamConfigStatus('error');
+        setTeamConfigError(e?.message || 'Could not reach team config.');
+      }
+    }
 
     hydratedRef.current = true;
     setLoading(false);
@@ -2192,6 +2259,25 @@ export default function App() {
     setGoals(next);
     await persist('goals', next);
     return true;
+  }
+
+  async function publishGoalsAndSpiffs() {
+    if (!SUPABASE_READY) { setTeamConfigError('Team config isn\'t set up yet — add your Supabase URL and key in the code.'); return; }
+    setPublishBusy(true);
+    setTeamConfigError('');
+    try {
+      const row = await fetchTeamConfig();
+      if (!row) throw new Error('Team config row not found — did you run team-config-setup.sql?');
+      if ((row.passphrase || '') !== publishPassphrase) throw new Error('That passphrase doesn\'t match.');
+      await publishTeamConfig(goals, spiffs);
+      setTeamConfigStatus('synced');
+      setTeamConfigUpdatedAt(new Date().toISOString());
+      flashToast('Published — every device will pick this up next time they open the app');
+    } catch (e) {
+      setTeamConfigStatus('error');
+      setTeamConfigError(e?.message || 'Publish failed.');
+    }
+    setPublishBusy(false);
   }
 
   async function updateGoal(monthKey, type, id, draft) {
@@ -3523,6 +3609,33 @@ export default function App() {
                   >
                     <Zap size={16} style={{ marginRight: 6 }} /> Add SPIFF
                   </button>
+                </div>
+
+                <div style={styles.adminSectionLabel}><Upload size={13} style={{ transform: 'rotate(180deg)' }} />Publish to Team</div>
+                <div style={styles.card}>
+                  <div style={{ fontSize: 12.5, color: 'var(--ink-soft)', marginBottom: 12, lineHeight: 1.5 }}>
+                    Pushes the goals and SPIFFs above to every device — no customer or sales data is ever touched.
+                    {teamConfigUpdatedAt && ` Last published ${fmtDateNice(teamConfigUpdatedAt.slice(0, 10))}.`}
+                  </div>
+                  {!SUPABASE_READY && (
+                    <div style={{ fontSize: 11.5, color: 'var(--ink-faint)', marginBottom: 10, lineHeight: 1.4 }}>
+                      Not set up yet — add your Supabase URL and key near the top of the code, and run team-config-setup.sql once.
+                    </div>
+                  )}
+                  <input
+                    type="password" value={publishPassphrase} onChange={e => setPublishPassphrase(e.target.value)}
+                    placeholder="Publish passphrase" style={{ ...styles.input, marginBottom: 8 }}
+                  />
+                  <button
+                    style={{ ...styles.secondaryBtn, opacity: publishBusy || !SUPABASE_READY ? 0.5 : 1 }}
+                    disabled={publishBusy || !SUPABASE_READY}
+                    onClick={publishGoalsAndSpiffs}
+                  >
+                    {publishBusy ? 'Publishing\u2026' : 'Publish goals & SPIFFs'}
+                  </button>
+                  {teamConfigError && (
+                    <div style={{ fontSize: 11.5, color: '#DC2626', marginTop: 10, lineHeight: 1.5 }}>{teamConfigError}</div>
+                  )}
                 </div>
 
               </>
