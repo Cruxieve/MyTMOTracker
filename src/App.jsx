@@ -2686,7 +2686,7 @@ export default function App() {
 
         {tab === 'goals' && (
           <div>
-            <div className="font-display" style={{ fontWeight: 700, fontSize: 18, marginBottom: 4 }}>Monthly Goals</div>
+            <div className="font-display" style={{ fontWeight: 700, fontSize: 18, marginBottom: 4, textAlign: 'center' }}>Monthly Goals</div>
             <MonthStepper value={goalMonth} onChange={setGoalMonth} label={monthLabel(goalMonth)} />
 
             {(() => {
@@ -2724,18 +2724,9 @@ export default function App() {
                       <div style={styles.goalTrack}>
                         <div style={{ ...styles.goalFill, width: `${r.pct}%`, background: r.met ? 'var(--positive)' : 'var(--accent)' }} />
                       </div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 8 }}>
+                      <div style={{ marginTop: 8 }}>
                         <span className="tabular" style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--ink-soft)' }}>
                           {fmtVal(r, r.achieved)} / {fmtVal(r, r.target)}
-                        </span>
-                        <span style={{ fontSize: 12, color: r.met ? 'var(--positive)' : 'var(--ink-faint)', fontWeight: 600 }}>
-                          {r.isPercent && r.denominator === 0
-                            ? 'No opportunities yet'
-                            : r.isRevenuePerUnit && r.units === 0
-                            ? 'No sales yet'
-                            : r.met
-                              ? `+${fmtVal(r, Math.round((r.achieved - r.target) * 10) / 10)} over`
-                              : `${fmtVal(r, Math.round((r.target - r.achieved) * 10) / 10)} to go`}
                         </span>
                       </div>
                     </div>
@@ -3815,6 +3806,16 @@ button { color: inherit; -webkit-appearance: none; appearance: none; -webkit-tap
 * { -ms-overflow-style: none; scrollbar-width: none; }
 ::-webkit-scrollbar { width: 0px; height: 0px; }
 
+/* iOS Safari's 100vh is based on the toolbar being fully collapsed, so when
+   it's showing, the app still thinks it has that space — pushing the bottom
+   nav partly under the browser's own UI. 100dvh tracks the real visible
+   height instead; the plain vh line above it is just the fallback for any
+   engine that doesn't understand dvh yet. */
+.app-shell {
+  height: 100vh !important;
+  height: 100dvh !important;
+}
+
 /* On phones the app fills the screen edge-to-edge, same as always. On any
    screen wider than that, frame it like a real app window instead of letting
    it float as a thin strip in empty space. */
@@ -3822,6 +3823,7 @@ button { color: inherit; -webkit-appearance: none; appearance: none; -webkit-tap
   .app-shell {
     margin: 24px auto !important;
     height: calc(100vh - 48px) !important;
+    height: calc(100dvh - 48px) !important;
     max-height: 900px;
     border-radius: 28px !important;
     box-shadow: 0 24px 70px rgba(0,0,0,0.28), 0 0 0 1px var(--border);
