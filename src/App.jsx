@@ -2489,23 +2489,22 @@ export default function App() {
     <div className={`app-shell ${rootClass}`} style={styles.app}>
       <style>{GLOBAL_CSS}</style>
 
-      {/* header */}
-      <div style={styles.header}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 11, minWidth: 0 }}>
-          <SignalBars level={5} height={20} barWidth={4} gap={2.5} dim="var(--border)" animate={false} />
-          <div style={{ minWidth: 0 }}>
-            <div className="font-display" style={{ fontSize: 16.5, fontWeight: 800, lineHeight: 1.1 }}>
-              Hey, {myName.split(' ')[0]}
-            </div>
-            <div style={{ fontSize: 11.5, color: 'var(--ink-faint)' }}>
-              {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })}
+      {/* header — hidden on Settings, since that tab has its own title */}
+      {tab !== 'settings' && (
+        <div style={styles.header}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 11, minWidth: 0 }}>
+            <SignalBars level={5} height={20} barWidth={4} gap={2.5} dim="var(--border)" animate={false} />
+            <div style={{ minWidth: 0 }}>
+              <div className="font-display" style={{ fontSize: 16.5, fontWeight: 800, lineHeight: 1.1 }}>
+                Hey, {myName.split(' ')[0]}
+              </div>
+              <div style={{ fontSize: 11.5, color: 'var(--ink-faint)' }}>
+                {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })}
+              </div>
             </div>
           </div>
         </div>
-        <button className="press" style={styles.iconBtn} onClick={() => { setTab('settings'); handleRatesTap(); }}>
-          <SettingsIcon size={18} />
-        </button>
-      </div>
+      )}
 
       <div style={styles.main}>
         {tab === 'dashboard' && (
@@ -3055,9 +3054,7 @@ export default function App() {
 
         {tab === 'settings' && (
           <div>
-            <div className="font-display" style={{ fontWeight: 700, fontSize: 18, marginBottom: 14 }}>Settings</div>
-
-            <div style={styles.card}>
+            <div style={{ ...styles.card, marginTop: 8 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                 <Avatar name={myName} size={40} />
                 <div style={{ flex: 1, minWidth: 0 }}>
@@ -3565,6 +3562,7 @@ export default function App() {
         <NavBtn icon={Users} label="Customers" active={tab === 'customers'} onClick={() => setTab('customers')} />
         <NavBtn icon={Smartphone} label="Plans" active={tab === 'plans'} onClick={() => setTab('plans')} />
         <NavBtn icon={TrendingUp} label="Goals" active={tab === 'goals'} onClick={() => setTab('goals')} />
+        <NavBtn icon={SettingsIcon} label="Settings" active={tab === 'settings'} onClick={() => { setTab('settings'); handleRatesTap(); }} />
       </div>
 
       {toast && <div style={styles.toast}>{toast}</div>}
