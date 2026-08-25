@@ -62,8 +62,8 @@ if (typeof window !== 'undefined' && !window.storage) {
  *  Paste your Supabase project's values here. Run team-config-setup.sql
  *  in your Supabase project first — same project as before is fine.
  * ============================================================ */
-const SUPABASE_URL = 'https://tnjoisvbifehakjrkafh.supabase.co';
-const SUPABASE_ANON_KEY = 'sb_publishable_G1soiy7w_MUYayal6HH2IQ_YCKxk1qo';
+const SUPABASE_URL = 'PASTE_YOUR_PROJECT_URL_HERE';
+const SUPABASE_ANON_KEY = 'PASTE_YOUR_ANON_PUBLIC_KEY_HERE';
 const SUPABASE_READY = SUPABASE_URL.startsWith('http') && SUPABASE_ANON_KEY.length > 20;
 
 function cleanUrl(u) {
@@ -107,7 +107,7 @@ const DEFAULT_CATEGORIES = [
   { name: 'Protection 360', calcType: 'flat', rate: 8 },
   { name: 'BYOD Protection', calcType: 'flat', rate: 5 },
   { name: 'Upgrade', calcType: 'flat', rate: 5 },
-  { name: 'Visa Application', calcType: 'flat', rate: 10, noQty: true },
+  { name: 'Visa', calcType: 'flat', rate: 10, noQty: true },
 ];
 
 // Categories that shouldn't appear in the transaction picker (kept out of the
@@ -120,6 +120,7 @@ const HIDDEN_IN_PICKER = ['Monthly Spiff', 'Other'];
 const CATEGORY_RENAMES = {
   'Accessory': 'Accessories',
   'Protection <360>': 'Protection 360',
+  'Visa Application': 'Visa',
 };
 
 function migrateCategories(list) {
@@ -295,6 +296,7 @@ function unitsSoldForGoal(commissions, categoryNames, monthKey, opts) {
     // actually counts toward this goal was attached in the same transaction.
     const hasWin = transactionHasWin(items, winCategories);
     for (const it of items) {
+      if (it.category === 'Visa' && !it.isPriority) continue; // every Visa gets paid, but only priority customers count toward the goal
       if (excludeNoOpportunity) {
         if (it.alreadyProtected) continue; // upgrade — line already protected
         if (it.category === 'Voice Line' && it.isBYOD && !hasWin) continue; // BYOD, nothing attached
@@ -966,7 +968,7 @@ function Stepper({ value, onChange, min = 1, max = 99 }) {
 }
 
 function SaleModal({ open, onClose, onSave, categories, initialPlan, spiffs, customers, onCreateCustomer }) {
-  const emptyDraft = { category: '', baseValue: '', qty: '1', manualAmount: '', planName: '', lines: '1', alreadyProtected: false, isBYOD: false, isEssential: false };
+  const emptyDraft = { category: '', baseValue: '', qty: '1', manualAmount: '', planName: '', lines: '1', alreadyProtected: false, isBYOD: false, isEssential: false, isPriority: false };
   const emptyForm = { date: todayInputValue(), notes: '', items: [], customerId: '' };
   const [form, setForm] = useState(emptyForm);
   const [draft, setDraft] = useState(emptyDraft);
@@ -1084,6 +1086,7 @@ function SaleModal({ open, onClose, onSave, categories, initialPlan, spiffs, cus
     if (draft.category === 'Upgrade' && draft.alreadyProtected) item.alreadyProtected = true;
     if (draft.category === 'Voice Line' && draft.isBYOD) item.isBYOD = true;
     if (draft.category === 'Accessories' && draft.isEssential) item.isEssential = true;
+    if (draft.category === 'Visa' && draft.isPriority) item.isPriority = true;
     if (draftSpiffTotal > 0) {
       item.spiffAmount = Math.round(draftSpiffTotal * 100) / 100;
       item.spiffLabels = activeDraftSpiffs.map(s => s.label);
@@ -1481,6 +1484,16 @@ function SaleModal({ open, onClose, onSave, categories, initialPlan, spiffs, cus
             </label>
           )}
 
+          {draft.category === 'Visa' && (
+            <label style={{ ...styles.checkboxRowWarn, justifyContent: 'center', textAlign: 'center' }}>
+              <input
+                type="checkbox" checked={draft.isPriority}
+                onChange={e => setDraft({ ...draft, isPriority: e.target.checked })}
+              />
+              Priority Customer
+            </label>
+          )}
+
           {draft.category === 'Voice Line' && (
             <label style={{ ...styles.checkboxRowWarn, justifyContent: 'center', textAlign: 'center' }}>
               <input
@@ -1810,11 +1823,6 @@ export default function App() {
   );
   const hydratedRef = React.useRef(false);
   const pushTimerRef = React.useRef(null);
-  const [bioAvailable, setBioAvailable] = useState(false);
-  const [bioCred, setBioCred] = useState(null);
-  const [locked, setLocked] = useState(false);
-  const [bioBusy, setBioBusy] = useState(false);
-  const [bioError, setBioError] = useState('');
   const [nameInput, setNameInput] = useState('');
   const [categories, setCategories] = useState(DEFAULT_CATEGORIES);
   const [spiffs, setSpiffs] = useState([]);
@@ -1912,23 +1920,6 @@ export default function App() {
 
     const p = await safeGet('profile', false);
     if (p) { try { setProfile(JSON.parse(p.value)); } catch (e) {} }
-
-    // Biometric unlock: only offered if the device actually has a platform authenticator.
-    try {
-      if (window.PublicKeyCredential?.isUserVerifyingPlatformAuthenticatorAvailable) {
-        const ok = await window.PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable();
-        setBioAvailable(!!ok);
-      }
-    } catch (e) { setBioAvailable(false); }
-
-    const bio = await safeGet('bioCred', false);
-    if (bio) {
-      try {
-        const parsed = JSON.parse(bio.value);
-        setBioCred(parsed);
-        if (parsed?.id) setLocked(true);
-      } catch (e) {}
-    }
 
     const c = await safeGet('categories', false);
     if (c) {
@@ -2094,63 +2085,6 @@ export default function App() {
     setNameInput('');
     setProfileError('');
     try { window.storage.delete('profile', false); } catch (e) {}
-  }
-
-  /* ---- biometric unlock (device-local) ---- */
-  async function enableBiometrics() {
-    setBioError('');
-    setBioBusy(true);
-    try {
-      const userId = new Uint8Array(16);
-      (window.crypto || window.msCrypto).getRandomValues(userId);
-      const cred = await navigator.credentials.create({
-        publicKey: {
-          challenge: randomChallenge(),
-          rp: { name: 'My TMO Tracker' },
-          user: { id: userId, name: profile?.name || 'user', displayName: profile?.name || 'user' },
-          pubKeyCredParams: [{ type: 'public-key', alg: -7 }, { type: 'public-key', alg: -257 }],
-          authenticatorSelection: { authenticatorAttachment: 'platform', userVerification: 'required', residentKey: 'preferred' },
-          timeout: 60000,
-          attestation: 'none',
-        },
-      });
-      if (!cred) throw new Error('No credential was created.');
-      const record = { id: bytesToB64(cred.rawId) };
-      setBioCred(record);
-      const res = await tryWrite('bioCred', record, false);
-      if (!res.ok) setBioError(`Enabled for now, but the setting didn't save (${res.why}).`);
-      else flashToast('Biometric unlock enabled');
-    } catch (e) {
-      setBioError(e?.message || 'Your device turned down the request.');
-    }
-    setBioBusy(false);
-  }
-
-  async function unlockWithBiometrics() {
-    setBioError('');
-    setBioBusy(true);
-    try {
-      await navigator.credentials.get({
-        publicKey: {
-          challenge: randomChallenge(),
-          allowCredentials: bioCred?.id ? [{ type: 'public-key', id: b64ToBytes(bioCred.id) }] : [],
-          userVerification: 'required',
-          timeout: 60000,
-        },
-      });
-      setLocked(false);
-    } catch (e) {
-      setBioError(e?.message || "That didn't match.");
-    }
-    setBioBusy(false);
-  }
-
-  async function disableBiometrics() {
-    try { await window.storage.delete('bioCred', false); } catch (e) {}
-    setBioCred(null);
-    setLocked(false);
-    setBioError('');
-    flashToast('Biometric unlock turned off');
   }
 
   const myName = profile?.name;
@@ -2482,7 +2416,7 @@ export default function App() {
             My TMO<br /><span style={{ color: 'var(--accent)' }}>Tracker</span>
           </div>
           <div style={{ color: 'var(--ink-soft)', fontSize: 14.5, marginBottom: 26, lineHeight: 1.5 }}>
-            Know what you've earned. When you earn it.
+            Know what you've earned. As you earn it.
           </div>
           <Field label="What's your name?">
             <input
@@ -2500,41 +2434,6 @@ export default function App() {
           {profileError && (
             <div style={{ fontSize: 12, color: '#DC2626', marginTop: 12, lineHeight: 1.5 }}>{profileError}</div>
           )}
-        </div>
-      </div>
-    );
-  }
-
-  if (locked) {
-    return (
-      <div className={`app-shell ${rootClass}`} style={{ ...styles.app, alignItems: 'center', justifyContent: 'center', padding: 24 }}>
-        <style>{GLOBAL_CSS}</style>
-        <div style={{ width: '100%', maxWidth: 320, textAlign: 'center' }} className="rise">
-          <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 18 }}>
-            <SignalBars level={5} height={28} barWidth={6} gap={4} dim="var(--border)" />
-          </div>
-          <div className="font-display" style={{ fontSize: 22, fontWeight: 800, marginBottom: 6 }}>
-            Welcome back, {profile.name.split(' ')[0]}
-          </div>
-          <div style={{ color: 'var(--ink-soft)', fontSize: 13.5, marginBottom: 24, lineHeight: 1.5 }}>
-            Unlock to see your numbers.
-          </div>
-          <button
-            className="press"
-            style={{ ...styles.primaryBtn, opacity: bioBusy ? 0.6 : 1 }}
-            disabled={bioBusy} onClick={unlockWithBiometrics}
-          >
-            {bioBusy ? 'Waiting…' : 'Unlock'}
-          </button>
-          {bioError && (
-            <div style={{ fontSize: 12, color: '#DC2626', marginTop: 12, lineHeight: 1.5 }}>{bioError}</div>
-          )}
-          <button
-            style={{ ...styles.linkBtn, margin: '16px auto 0' }}
-            onClick={disableBiometrics}
-          >
-            Can't unlock? Turn off biometrics
-          </button>
         </div>
       </div>
     );
@@ -2619,7 +2518,12 @@ export default function App() {
                     <Tooltip
                       cursor={{ fill: 'rgba(226,0,116,0.06)' }}
                       formatter={(v) => fmtMoney(v)}
-                      contentStyle={{ borderRadius: 12, border: '1px solid var(--border)', fontSize: 12, boxShadow: 'var(--shadow-md)' }}
+                      contentStyle={{
+                        borderRadius: 12, border: '1px solid var(--border)', fontSize: 12,
+                        boxShadow: 'var(--shadow-md)', background: 'var(--surface)', color: 'var(--ink)',
+                      }}
+                      labelStyle={{ color: 'var(--ink)', fontWeight: 700, marginBottom: 2 }}
+                      itemStyle={{ color: 'var(--ink)' }}
                     />
                     <Bar dataKey="total" fill="url(#barGrad)" radius={[6, 6, 0, 0]} animationDuration={620} />
                   </BarChart>
@@ -3126,16 +3030,16 @@ export default function App() {
                   <div style={{ fontWeight: 700, fontSize: 15 }}>{myName}</div>
                   <div style={{ fontSize: 12, color: storageOk ? 'var(--positive)' : '#DC2626', display: 'flex', alignItems: 'center', gap: 5 }}>
                     <span style={{ width: 6, height: 6, borderRadius: '50%', background: storageOk ? 'var(--positive)' : '#DC2626', flexShrink: 0 }} />
-                    {storageOk ? 'Saved — you stay signed in' : 'Not saving — you may be asked again'}
+                    {storageOk ? 'Online' : 'Offline'}
                   </div>
                 </div>
+                <button style={styles.iconBtnSm} onClick={switchUser} aria-label="Edit name">
+                  <Edit2 size={15} />
+                </button>
               </div>
               {profileError && (
                 <div style={{ fontSize: 11.5, color: '#DC2626', marginTop: 10, lineHeight: 1.5 }}>{profileError}</div>
               )}
-              <button style={{ ...styles.secondaryBtn, marginTop: 12 }} onClick={switchUser}>
-                <Edit2 size={14} style={{ marginRight: 6 }} /> Edit name
-              </button>
             </div>
 
             {/* employment type — determines which monthly goals apply */}
@@ -3183,8 +3087,7 @@ export default function App() {
             <div style={{ fontSize: 13, fontWeight: 700, margin: '18px 2px 8px' }}>Backup & Restore</div>
             <div style={styles.card}>
               <div style={{ fontSize: 12.5, color: 'var(--ink-soft)', marginBottom: 12, lineHeight: 1.5 }}>
-                Your data is private to this device. Save a backup file anytime — keep
-                it somewhere safe, and restore it here if you ever switch devices.
+                Your data is private to this device. Save a backup file anytime. Keep it somewhere safe and restore it if you ever switch devices.
               </div>
               <div style={{ display: 'flex', gap: 8, marginBottom: backupError ? 10 : 0 }}>
                 <button className="press" style={{ ...styles.secondaryBtn, flex: 1 }} onClick={exportBackup}>
@@ -3201,42 +3104,6 @@ export default function App() {
               </div>
               {backupError && (
                 <div style={{ fontSize: 11.5, color: '#DC2626', lineHeight: 1.5 }}>{backupError}</div>
-              )}
-            </div>
-
-            <div style={{ fontSize: 13, fontWeight: 700, margin: '18px 2px 8px' }}>Biometric unlock</div>
-            <div style={styles.card}>
-              {!bioAvailable ? (
-                <div style={{ fontSize: 12.5, color: 'var(--ink-soft)', lineHeight: 1.5 }}>
-                  This device or browser doesn't offer Face ID / fingerprint unlock here, so this option isn't available.
-                </div>
-              ) : bioCred ? (
-                <>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-                    <ShieldCheck size={16} color="var(--positive)" />
-                    <span style={{ fontSize: 13.5, fontWeight: 700 }}>On</span>
-                  </div>
-                  <div style={{ fontSize: 12, color: 'var(--ink-soft)', marginBottom: 12, lineHeight: 1.5 }}>
-                    You'll be asked to verify each time the app opens.
-                  </div>
-                  <button style={styles.secondaryBtn} onClick={disableBiometrics}>Turn off</button>
-                </>
-              ) : (
-                <>
-                  <div style={{ fontSize: 12.5, color: 'var(--ink-soft)', marginBottom: 12, lineHeight: 1.5 }}>
-                    Require Face ID, Touch ID, or your fingerprint before your numbers are shown.
-                  </div>
-                  <button
-                    className="press"
-                    style={{ ...styles.secondaryBtn, opacity: bioBusy ? 0.6 : 1 }}
-                    disabled={bioBusy} onClick={enableBiometrics}
-                  >
-                    {bioBusy ? 'Waiting…' : 'Turn on'}
-                  </button>
-                </>
-              )}
-              {bioError && (
-                <div style={{ fontSize: 11.5, color: '#DC2626', marginTop: 10, lineHeight: 1.5 }}>{bioError}</div>
               )}
             </div>
 
@@ -3419,6 +3286,11 @@ export default function App() {
                   {newGoal.goalType === 'revenuePerUnit' && newGoal.categoryNames.includes('Accessories') && (
                     <div style={{ fontSize: 11.5, color: 'var(--ink-faint)', margin: '-2px 2px 8px', lineHeight: 1.4 }}>
                       Only accessories logged as "Essential accessory" count toward this revenue total.
+                    </div>
+                  )}
+                  {newGoal.categoryNames.includes('Visa') && (
+                    <div style={{ fontSize: 11.5, color: 'var(--ink-faint)', margin: '-2px 2px 8px', lineHeight: 1.4 }}>
+                      Only Visa applications logged as "Priority Customer" count here — every Visa still pays commission regardless.
                     </div>
                   )}
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 8 }}>
@@ -3713,6 +3585,7 @@ function SaleRow({ sale, customers, onDelete }) {
     if (it.alreadyProtected) parts.push('Already protected');
     if (it.isBYOD) parts.push('BYOD');
     if (it.isEssential) parts.push('Essential');
+    if (it.isPriority) parts.push('Priority');
     if (it.spiffAmount > 0) parts.push(`+${fmtMoneyPlain(it.spiffAmount)} SPIFF`);
     return parts.join(' \u00b7 ');
   }
@@ -3950,7 +3823,7 @@ const styles = {
     display: 'flex', alignItems: 'center', justifyContent: 'space-between',
     padding: '16px 18px 12px', flexShrink: 0, gap: 12,
   },
-  main: { flex: 1, overflowY: 'auto', padding: '4px 16px 96px' },
+  main: { flex: 1, overflowY: 'auto', padding: '4px 16px 96px', WebkitOverflowScrolling: 'touch', overscrollBehavior: 'contain' },
 
   pillRow: { display: 'flex', gap: 5, marginBottom: 14, background: 'var(--track)', padding: 4, borderRadius: 13 },
   pill: {
