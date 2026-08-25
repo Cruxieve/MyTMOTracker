@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   Home, DollarSign, Users, Settings as SettingsIcon, Plus, X,
   Search, Phone, Mail, Edit2, Trash2, Calendar, TrendingUp, LogOut,
-  ChevronRight, ChevronDown, Smartphone, ShieldCheck, Upload, ExternalLink, FileText,
+  ChevronRight, ChevronLeft, ChevronDown, Smartphone, ShieldCheck, Upload, ExternalLink, FileText,
   Wifi, Watch, Tablet, CreditCard, Package, Zap, Gift, Check, Minus, ArrowUpCircle, UserPlus, Maximize2, Shield
 } from 'lucide-react';
 import {
@@ -967,6 +967,52 @@ function Stepper({ value, onChange, min = 1, max = 99 }) {
   );
 }
 
+function shiftMonth(ym, delta) {
+  const [y, m] = ym.split('-').map(Number);
+  const d = new Date(y, m - 1 + delta, 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+}
+
+function MonthStepper({ value, onChange, label }) {
+  const holdTimer = React.useRef(null);
+  const holdInterval = React.useRef(null);
+
+  function step(delta) { onChange(shiftMonth(value, delta)); }
+
+  function startHold(delta) {
+    step(delta);
+    holdTimer.current = setTimeout(() => {
+      holdInterval.current = setInterval(() => step(delta), 140);
+    }, 450);
+  }
+  function endHold() {
+    clearTimeout(holdTimer.current);
+    clearInterval(holdInterval.current);
+  }
+
+  return (
+    <div style={styles.monthStepper}>
+      <button
+        className="press" style={styles.monthStepperBtn}
+        onMouseDown={() => startHold(-1)} onMouseUp={endHold} onMouseLeave={endHold}
+        onTouchStart={() => startHold(-1)} onTouchEnd={endHold}
+      >
+        <ChevronLeft size={18} strokeWidth={2.4} />
+      </button>
+      <div className="font-display tabular" style={{ flex: 1, textAlign: 'center', fontSize: 14.5, fontWeight: 700 }}>
+        {label}
+      </div>
+      <button
+        className="press" style={styles.monthStepperBtn}
+        onMouseDown={() => startHold(1)} onMouseUp={endHold} onMouseLeave={endHold}
+        onTouchStart={() => startHold(1)} onTouchEnd={endHold}
+      >
+        <ChevronRight size={18} strokeWidth={2.4} />
+      </button>
+    </div>
+  );
+}
+
 function SaleModal({ open, onClose, onSave, categories, initialPlan, spiffs, customers, onCreateCustomer }) {
   const emptyDraft = { category: '', baseValue: '', qty: '1', manualAmount: '', planName: '', lines: '1', alreadyProtected: false, isBYOD: false, isEssential: false, isPriority: false };
   const emptyForm = { date: todayInputValue(), notes: '', items: [], customerId: '' };
@@ -1506,7 +1552,7 @@ function SaleModal({ open, onClose, onSave, categories, initialPlan, spiffs, cus
         </div>
       )}
 
-      <SectionLabel hint="Optional">Notes</SectionLabel>
+      <SectionLabel>Notes</SectionLabel>
       <textarea
         rows={2} value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })}
         placeholder="Anything worth remembering about this transaction"
@@ -2641,10 +2687,7 @@ export default function App() {
         {tab === 'goals' && (
           <div>
             <div className="font-display" style={{ fontWeight: 700, fontSize: 18, marginBottom: 4 }}>Monthly Goals</div>
-            <input
-              type="month" value={goalMonth} onChange={e => setGoalMonth(e.target.value)}
-              style={{ ...styles.input, marginBottom: 14 }}
-            />
+            <MonthStepper value={goalMonth} onChange={setGoalMonth} label={monthLabel(goalMonth)} />
 
             {(() => {
               const { list: goalList, sourceMonth } = goalsForMonth(goals, goalMonth, employmentType);
@@ -3155,9 +3198,10 @@ export default function App() {
 
                 <div style={styles.adminSectionLabel}><TrendingUp size={13} />Monthly Goals</div>
                 <div style={styles.card}>
-                  <input
-                    type="month" value={adminGoalMonth} onChange={e => { setAdminGoalMonth(e.target.value); setEditingGoalId(null); setNewGoal({ name: '', target: '', goalType: 'units', categoryNames: [], baseCategoryNames: [] }); }}
-                    style={{ ...styles.input, marginBottom: 10 }}
+                  <MonthStepper
+                    value={adminGoalMonth}
+                    onChange={v => { setAdminGoalMonth(v); setEditingGoalId(null); setNewGoal({ name: '', target: '', goalType: 'units', categoryNames: [], baseCategoryNames: [] }); }}
+                    label={monthLabel(adminGoalMonth)}
                   />
                   <div style={{ display: 'flex', gap: 6, marginBottom: 12 }}>
                     {[
@@ -3826,6 +3870,16 @@ const styles = {
   main: { flex: 1, overflowY: 'auto', padding: '4px 16px 96px', WebkitOverflowScrolling: 'touch', overscrollBehavior: 'contain' },
 
   pillRow: { display: 'flex', gap: 5, marginBottom: 14, background: 'var(--track)', padding: 4, borderRadius: 13 },
+  monthStepper: {
+    display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14,
+    background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 13,
+    padding: '6px 6px', boxShadow: 'var(--shadow-sm)',
+  },
+  monthStepperBtn: {
+    width: 34, height: 34, borderRadius: 10, border: '1px solid var(--border)', background: 'var(--bg)',
+    color: 'var(--ink)', display: 'flex', alignItems: 'center', justifyContent: 'center',
+    cursor: 'pointer', flexShrink: 0, userSelect: 'none',
+  },
   pill: {
     flex: 1, padding: '8px 0', borderRadius: 9, border: 'none', background: 'transparent',
     color: 'var(--ink-soft)', fontSize: 12.5, fontWeight: 600, cursor: 'pointer',
