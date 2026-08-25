@@ -2369,7 +2369,7 @@ export default function App() {
 
   if (loading) {
     return (
-      <div className={rootClass} style={{ ...styles.app, alignItems: 'center', justifyContent: 'center' }}>
+      <div className={`app-shell ${rootClass}`} style={{ ...styles.app, alignItems: 'center', justifyContent: 'center' }}>
         <style>{GLOBAL_CSS}</style>
         <div style={{ textAlign: 'center' }}>
           <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 14 }}>
@@ -2386,7 +2386,7 @@ export default function App() {
   // Config not filled in yet — tell the owner what to do rather than failing silently.
   if (!profile) {
     return (
-      <div className={rootClass} style={{ ...styles.app, alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+      <div className={`app-shell ${rootClass}`} style={{ ...styles.app, alignItems: 'center', justifyContent: 'center', padding: 24 }}>
         <style>{GLOBAL_CSS}</style>
         <div style={{ width: '100%', maxWidth: 340 }} className="rise">
           <div style={{ marginBottom: 18 }}>
@@ -2421,7 +2421,7 @@ export default function App() {
 
   if (locked) {
     return (
-      <div className={rootClass} style={{ ...styles.app, alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+      <div className={`app-shell ${rootClass}`} style={{ ...styles.app, alignItems: 'center', justifyContent: 'center', padding: 24 }}>
         <style>{GLOBAL_CSS}</style>
         <div style={{ width: '100%', maxWidth: 320, textAlign: 'center' }} className="rise">
           <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 18 }}>
@@ -2455,7 +2455,7 @@ export default function App() {
   }
 
   return (
-    <div className={rootClass} style={styles.app}>
+    <div className={`app-shell ${rootClass}`} style={styles.app}>
       <style>{GLOBAL_CSS}</style>
 
       {/* header */}
@@ -2509,7 +2509,7 @@ export default function App() {
                   className="rise press" style={{ ...styles.statCard, animationDelay: `${80 + i * 60}ms` }}
                 >
                   <div style={{ fontSize: 10, color: 'var(--ink-faint)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em' }}>{p}</div>
-                  <div className="font-display tabular" style={{ fontSize: 16.5, fontWeight: 800, marginTop: 3 }}>{fmtMoney(myTotals[p])}</div>
+                  <div className="font-display tabular" style={{ fontSize: 16.5, fontWeight: 800, marginTop: 3, color: 'var(--ink)' }}>{fmtMoney(myTotals[p])}</div>
                 </button>
               ))}
             </div>
@@ -3781,7 +3781,23 @@ const GLOBAL_CSS = `
 .tabular { font-variant-numeric: tabular-nums; font-feature-settings: 'tnum'; }
 * { box-sizing: border-box; font-family: 'Teleneo', 'Urbanist', system-ui, sans-serif; -webkit-tap-highlight-color: transparent; }
 input, select, textarea, button { font-family: 'Teleneo', 'Urbanist', system-ui, sans-serif; }
+button { color: inherit; -webkit-appearance: none; appearance: none; -webkit-tap-highlight-color: transparent; }
+* { -ms-overflow-style: none; scrollbar-width: none; }
 ::-webkit-scrollbar { width: 0px; height: 0px; }
+
+/* On phones the app fills the screen edge-to-edge, same as always. On any
+   screen wider than that, frame it like a real app window instead of letting
+   it float as a thin strip in empty space. */
+@media (min-width: 540px) {
+  .app-shell {
+    margin: 24px auto !important;
+    height: calc(100vh - 48px) !important;
+    max-height: 900px;
+    border-radius: 28px !important;
+    box-shadow: 0 24px 70px rgba(0,0,0,0.28), 0 0 0 1px var(--border);
+    overflow: hidden;
+  }
+}
 
 @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.3; } }
 @keyframes riseIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
