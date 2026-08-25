@@ -1830,6 +1830,16 @@ export default function App() {
   }, []);
 
   const isDark = themePref === 'dark' || (themePref === 'system' && systemDark);
+
+  // The app itself is a centered column — on a real browser (wider than the
+  // column, unlike the Claude preview) the page behind it would otherwise stay
+  // white regardless of theme, since the .theme-dark class only reaches the
+  // column, not the page itself.
+  useEffect(() => {
+    const bg = isDark ? '#0B0B10' : '#F2F2F6';
+    document.documentElement.style.background = bg;
+    document.body.style.background = bg;
+  }, [isDark]);
   const rootClass = isDark ? 'theme-dark' : '';
 
   async function changeTheme(pref) {
