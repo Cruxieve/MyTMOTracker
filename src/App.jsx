@@ -982,8 +982,8 @@ function MonthStepper({ value, onChange, label }) {
   function startHold(delta) {
     step(delta);
     holdTimer.current = setTimeout(() => {
-      holdInterval.current = setInterval(() => step(delta), 140);
-    }, 450);
+      holdInterval.current = setInterval(() => step(delta), 420);
+    }, 500);
   }
   function endHold() {
     clearTimeout(holdTimer.current);
@@ -1879,7 +1879,6 @@ export default function App() {
   const [statPeriod, setStatPeriod] = useState('month');
   const [saleMonth, setSaleMonth] = useState(() => new Date().toISOString().slice(0, 7));
   const [goalMonth, setGoalMonth] = useState(() => new Date().toISOString().slice(0, 7));
-  const [reconcileText, setReconcileText] = useState('');
   const [customerSearch, setCustomerSearch] = useState('');
   const [showSaleModal, setShowSaleModal] = useState(false);
   const [saleModalPlan, setSaleModalPlan] = useState(null);
@@ -2358,46 +2357,6 @@ export default function App() {
     return new Date(y, m - 1, 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
   }
 
-  async function copyMonthSummary() {
-    const body = [];
-    let spiffTotal = 0;
-    monthSales.forEach(s => {
-      const items = Array.isArray(s.items) && s.items.length ? s.items : null;
-      const cust = customers.find(c => c.id === s.customerId);
-      body.push(`${fmtDateNice(s.date)}\t${cust ? cust.name : 'No customer'}\t${fmtMoney(s.amount)}`);
-      if (items) {
-        items.forEach(it => {
-          const q = Number(it.qty) || 1;
-          const bits = [];
-          if (it.planName) bits.push(it.planName);
-          else if (it.baseValue != null) bits.push(`${fmtMoneyPlain(it.baseValue)} each`);
-          if (q > 1) bits.push(`Qty ${q}`);
-          if (it.spiffAmount > 0) { bits.push(`+${fmtMoneyPlain(it.spiffAmount)} SPIFF`); spiffTotal += it.spiffAmount; }
-          const d = bits.length ? ` (${bits.join(', ')})` : '';
-          body.push(`    · ${it.category}${d}\t${fmtMoney(it.amount)}`);
-        });
-      } else {
-        body.push(`    · ${s.category}\t${fmtMoney(s.amount)}`);
-      }
-    });
-    const lines = [
-      `My TMO Tracker — Commission Summary`,
-      `${monthLabel(saleMonth)} · ${myName}`,
-      '-'.repeat(38),
-      ...body,
-      '-'.repeat(38),
-      `Total: ${fmtMoney(monthTotal)} (${monthSales.length} transaction${monthSales.length === 1 ? '' : 's'})`,
-      ...(spiffTotal > 0 ? [`Includes ${fmtMoney(spiffTotal)} in SPIFFs`] : []),
-    ];
-    const text = lines.join('\n');
-    try {
-      await navigator.clipboard.writeText(text);
-      flashToast('Copied — paste it anywhere to compare');
-    } catch (e) {
-      setReconcileText(text);
-    }
-  }
-
   const customerIdsWithSales = useMemo(
     () => new Set(commissions.filter(c => c.customerId).map(c => c.customerId)),
     [commissions]
@@ -2596,18 +2555,10 @@ export default function App() {
           <div>
             <div className="font-display" style={{ fontWeight: 700, fontSize: 18, marginTop: 14, marginBottom: 12 }}>Your sales</div>
 
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
-              <input
-                type="month" value={saleMonth} onChange={e => setSaleMonth(e.target.value)}
-                style={{ ...styles.input, flex: 1 }}
-              />
-              <button
-                style={{ ...styles.secondaryBtn, opacity: monthSales.length === 0 ? 0.5 : 1 }}
-                onClick={copyMonthSummary} disabled={monthSales.length === 0}
-              >
-                Copy summary
-              </button>
-            </div>
+            <input
+              type="month" value={saleMonth} onChange={e => setSaleMonth(e.target.value)}
+              style={{ ...styles.input, marginBottom: 12 }}
+            />
 
             <div style={{ ...styles.card, padding: '10px 14px', marginBottom: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }} className="rise">
               <div>
@@ -2616,20 +2567,6 @@ export default function App() {
               </div>
               <div className="font-display tabular" style={{ fontSize: 20, fontWeight: 800 }}>{fmtMoney(monthTotal)}</div>
             </div>
-
-            {reconcileText && (
-              <div style={{ marginBottom: 12 }}>
-                <div style={{ fontSize: 11.5, color: 'var(--ink-soft)', marginBottom: 6 }}>
-                  Couldn't copy automatically — select and copy the text below:
-                </div>
-                <textarea
-                  readOnly value={reconcileText} rows={6}
-                  style={{ ...styles.input, fontFamily: 'monospace', fontSize: 11.5, resize: 'vertical' }}
-                  onFocus={e => e.target.select()}
-                />
-                <button style={{ ...styles.linkBtn, marginTop: 6 }} onClick={() => setReconcileText('')}>Dismiss</button>
-              </div>
-            )}
 
             {monthSales.length === 0 ? (
               <EmptyState icon={DollarSign} title="No Sales" />
@@ -3587,7 +3524,9 @@ export default function App() {
 function NavBtn({ icon: Icon, label, active, onClick }) {
   return (
     <button onClick={onClick} style={styles.navBtn} className="press">
-      <Icon size={20} color={active ? 'var(--accent)' : 'var(--ink-faint)'} strokeWidth={active ? 2.4 : 1.9} />
+      <div style={styles.navIconBox}>
+        <Icon size={20} color={active ? 'var(--accent)' : 'var(--ink-faint)'} strokeWidth={active ? 2.4 : 1.9} />
+      </div>
       <span style={{
         fontSize: 10, fontWeight: active ? 700 : 600,
         color: active ? 'var(--accent)' : 'var(--ink-faint)', marginTop: 3, letterSpacing: '-0.01em',
@@ -3830,6 +3769,24 @@ button { color: inherit; -webkit-appearance: none; appearance: none; -webkit-tap
     linear-gradient(207deg, #0c0c12 5px, transparent 5px),
     linear-gradient(90deg, #0d0d14 10px, transparent 10px),
     linear-gradient(#101017 25%, #0d0d14 25%, #0d0d14 50%, transparent 50%, transparent 75%, #101017 75%) !important;
+  background-size: 20px 20px !important;
+  background-position: 0 5px, 10px 0, 0 10px, 10px 5px, 0 0, 0 0 !important;
+  background-attachment: local !important;
+}
+
+/* Light mode counterpart — same woven geometry, recolored soft and pale so
+   it reads as an understated paper-like texture rather than a bright
+   version of the dark weave. Cards keep their own solid white surface, so
+   this only ever shows in the gaps around and between content. */
+.app-shell:not(.theme-dark) {
+  background-color: #F2F2F6 !important;
+  background-image:
+    linear-gradient(27deg, #EBEBF1 5px, transparent 5px),
+    linear-gradient(207deg, #EBEBF1 5px, transparent 5px),
+    linear-gradient(27deg, #E4E4EC 5px, transparent 5px),
+    linear-gradient(207deg, #E4E4EC 5px, transparent 5px),
+    linear-gradient(90deg, #EDEDF3 10px, transparent 10px),
+    linear-gradient(#F8F8FA 25%, #EDEDF3 25%, #EDEDF3 50%, transparent 50%, transparent 75%, #F8F8FA 75%) !important;
   background-size: 20px 20px !important;
   background-position: 0 5px, 10px 0, 0 10px, 10px 5px, 0 0, 0 0 !important;
   background-attachment: local !important;
@@ -4206,6 +4163,9 @@ const styles = {
     display: 'flex', gap: 4, borderTop: '1px solid var(--border)', background: 'var(--nav-bg)',
     backdropFilter: 'blur(14px)', WebkitBackdropFilter: 'blur(14px)',
     padding: '7px 4px calc(7px + env(safe-area-inset-bottom))', flexShrink: 0,
+  },
+  navIconBox: {
+    width: 24, height: 20, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
   },
   navBtn: {
     flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', border: 'none',
