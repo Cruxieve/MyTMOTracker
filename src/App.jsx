@@ -2557,10 +2557,10 @@ export default function App() {
 
             <input
               type="month" value={saleMonth} onChange={e => setSaleMonth(e.target.value)}
-              style={{ ...styles.input, marginBottom: 12 }}
+              style={{ ...styles.input, borderRadius: 15, marginBottom: 8 }}
             />
 
-            <div style={{ ...styles.card, padding: '10px 14px', marginBottom: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }} className="rise">
+            <div style={{ ...styles.card, borderRadius: 15, padding: '11px 13px', marginBottom: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }} className="rise">
               <div>
                 <div style={{ fontSize: 11.5, color: 'var(--ink-soft)', fontWeight: 600 }}>{monthLabel(saleMonth)}</div>
                 <div style={{ fontSize: 11, color: 'var(--ink-faint)' }}>{monthSales.length} transaction{monthSales.length === 1 ? '' : 's'}</div>
@@ -2622,8 +2622,11 @@ export default function App() {
 
         {tab === 'goals' && (
           <div>
-            <div className="font-display" style={{ fontWeight: 700, fontSize: 18, marginTop: 14, marginBottom: 4, textAlign: 'center' }}>Monthly Goals</div>
-            <MonthStepper value={goalMonth} onChange={setGoalMonth} label={monthLabel(goalMonth)} />
+            <div className="font-display" style={{ fontWeight: 700, fontSize: 18, marginTop: 14, marginBottom: 12, textAlign: 'center' }}>Monthly Goals</div>
+            <input
+              type="month" value={goalMonth} onChange={e => setGoalMonth(e.target.value)}
+              style={{ ...styles.input, borderRadius: 15, marginBottom: 8 }}
+            />
 
             {(() => {
               const { list: goalList, sourceMonth } = goalsForMonth(goals, goalMonth, employmentType);
@@ -3772,7 +3775,7 @@ button { color: inherit; -webkit-appearance: none; appearance: none; -webkit-tap
     linear-gradient(30deg, #0B0B10 24%, #1E1E2A 0, #1E1E2A 26%, rgba(11,11,16,0) 0, rgba(11,11,16,0) 74%, #1E1E2A 0, #1E1E2A 76%, #0B0B10 0) 0 0,
     linear-gradient(90deg, #1E1E2A 2%, #0B0B10 0, #0B0B10 98%, #1E1E2A 0) 0 0 !important;
   background-size: 40px 60px !important;
-  background-attachment: local !important;
+  background-attachment: scroll !important;
 }
 
 /* Light mode counterpart — identical hex geometry, recolored pale so it
@@ -3789,7 +3792,7 @@ button { color: inherit; -webkit-appearance: none; appearance: none; -webkit-tap
     linear-gradient(30deg, #F2F2F6 24%, #E0E0E9 0, #E0E0E9 26%, rgba(242,242,246,0) 0, rgba(242,242,246,0) 74%, #E0E0E9 0, #E0E0E9 76%, #F2F2F6 0) 0 0,
     linear-gradient(90deg, #E0E0E9 2%, #F2F2F6 0, #F2F2F6 98%, #E0E0E9 0) 0 0 !important;
   background-size: 40px 60px !important;
-  background-attachment: local !important;
+  background-attachment: scroll !important;
 }
 
 /* The mesh is deliberately low-contrast, but cards and text still sit on
@@ -3842,7 +3845,7 @@ button { color: inherit; -webkit-appearance: none; appearance: none; -webkit-tap
 const styles = {
   app: {
     display: 'flex', flexDirection: 'column', height: '100vh', maxWidth: 480, margin: '0 auto',
-    background: 'var(--bg)', color: 'var(--ink)', position: 'relative', overflow: 'hidden',
+    color: 'var(--ink)', position: 'relative', overflow: 'hidden',
   },
   header: {
     display: 'flex', alignItems: 'center', justifyContent: 'space-between',
