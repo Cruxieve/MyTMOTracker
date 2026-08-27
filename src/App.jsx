@@ -3753,46 +3753,46 @@ button { color: inherit; -webkit-appearance: none; appearance: none; -webkit-tap
 }
 
 /* ------------------------------------------------------------------
-   Carbon fiber weave — drawn entirely with CSS gradients rather than a
-   bitmap, so it stays perfectly sharp at any screen density and costs
-   a few hundred bytes instead of a compressed image. The two 45°/-45°
-   gradient pairs form the interlocking twill; the offset background
-   positions are what create the woven checkerboard rather than a flat
-   crosshatch. Scoped to dark mode — this reads as muddy on a light UI.
+   Honeycomb hex mesh — drawn entirely with CSS gradients rather than a
+   bitmap, so it stays perfectly sharp at any screen density and costs a
+   few hundred bytes instead of a compressed image. The two angled
+   linear-gradients (30deg / 150deg) cut the slanted hex walls, the
+   radial-gradients round the left/right vertices, and the vertical
+   gradient closes the flat top and bottom edges. Tile ratio is locked at
+   2:3 (40x60) — the radial offsets below are tuned to that size, so
+   changing one without the other breaks the lattice alignment.
    ------------------------------------------------------------------ */
 .app-shell.theme-dark {
   background-color: #0B0B10 !important;
   background-image:
-    linear-gradient(27deg, #0f0f16 5px, transparent 5px),
-    linear-gradient(207deg, #0f0f16 5px, transparent 5px),
-    linear-gradient(27deg, #0c0c12 5px, transparent 5px),
-    linear-gradient(207deg, #0c0c12 5px, transparent 5px),
-    linear-gradient(90deg, #0d0d14 10px, transparent 10px),
-    linear-gradient(#101017 25%, #0d0d14 25%, #0d0d14 50%, transparent 50%, transparent 75%, #101017 75%) !important;
-  background-size: 20px 20px !important;
-  background-position: 0 5px, 10px 0, 0 10px, 10px 5px, 0 0, 0 0 !important;
+    radial-gradient(circle farthest-side at 0% 50%, #0B0B10 23.5%, rgba(11,11,16,0) 0) 21px 30px,
+    radial-gradient(circle farthest-side at 0% 50%, #1E1E2A 24%, rgba(30,30,42,0) 0) 19px 30px,
+    linear-gradient(#0B0B10 14%, rgba(11,11,16,0) 0, rgba(11,11,16,0) 85%, #0B0B10 0) 0 0,
+    linear-gradient(150deg, #0B0B10 24%, #1E1E2A 0, #1E1E2A 26%, rgba(11,11,16,0) 0, rgba(11,11,16,0) 74%, #1E1E2A 0, #1E1E2A 76%, #0B0B10 0) 0 0,
+    linear-gradient(30deg, #0B0B10 24%, #1E1E2A 0, #1E1E2A 26%, rgba(11,11,16,0) 0, rgba(11,11,16,0) 74%, #1E1E2A 0, #1E1E2A 76%, #0B0B10 0) 0 0,
+    linear-gradient(90deg, #1E1E2A 2%, #0B0B10 0, #0B0B10 98%, #1E1E2A 0) 0 0 !important;
+  background-size: 40px 60px !important;
   background-attachment: local !important;
 }
 
-/* Light mode counterpart — same woven geometry, recolored soft and pale so
-   it reads as an understated paper-like texture rather than a bright
-   version of the dark weave. Cards keep their own solid white surface, so
-   this only ever shows in the gaps around and between content. */
+/* Light mode counterpart — identical hex geometry, recolored pale so it
+   reads as a soft embossed texture rather than a bright copy of the dark
+   version. Cards keep their own solid surfaces, so this only ever shows
+   in the gaps around and between content. */
 .app-shell:not(.theme-dark) {
   background-color: #F2F2F6 !important;
   background-image:
-    linear-gradient(27deg, #EBEBF1 5px, transparent 5px),
-    linear-gradient(207deg, #EBEBF1 5px, transparent 5px),
-    linear-gradient(27deg, #E4E4EC 5px, transparent 5px),
-    linear-gradient(207deg, #E4E4EC 5px, transparent 5px),
-    linear-gradient(90deg, #EDEDF3 10px, transparent 10px),
-    linear-gradient(#F8F8FA 25%, #EDEDF3 25%, #EDEDF3 50%, transparent 50%, transparent 75%, #F8F8FA 75%) !important;
-  background-size: 20px 20px !important;
-  background-position: 0 5px, 10px 0, 0 10px, 10px 5px, 0 0, 0 0 !important;
+    radial-gradient(circle farthest-side at 0% 50%, #F2F2F6 23.5%, rgba(242,242,246,0) 0) 21px 30px,
+    radial-gradient(circle farthest-side at 0% 50%, #E0E0E9 24%, rgba(224,224,233,0) 0) 19px 30px,
+    linear-gradient(#F2F2F6 14%, rgba(242,242,246,0) 0, rgba(242,242,246,0) 85%, #F2F2F6 0) 0 0,
+    linear-gradient(150deg, #F2F2F6 24%, #E0E0E9 0, #E0E0E9 26%, rgba(242,242,246,0) 0, rgba(242,242,246,0) 74%, #E0E0E9 0, #E0E0E9 76%, #F2F2F6 0) 0 0,
+    linear-gradient(30deg, #F2F2F6 24%, #E0E0E9 0, #E0E0E9 26%, rgba(242,242,246,0) 0, rgba(242,242,246,0) 74%, #E0E0E9 0, #E0E0E9 76%, #F2F2F6 0) 0 0,
+    linear-gradient(90deg, #E0E0E9 2%, #F2F2F6 0, #F2F2F6 98%, #E0E0E9 0) 0 0 !important;
+  background-size: 40px 60px !important;
   background-attachment: local !important;
 }
 
-/* The weave is deliberately low-contrast, but cards and text still sit on
+/* The mesh is deliberately low-contrast, but cards and text still sit on
    their own solid surfaces, so nothing reads through them. */
 
 /* On phones the app fills the screen edge-to-edge, same as always. On any
