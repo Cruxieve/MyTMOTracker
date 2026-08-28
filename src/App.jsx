@@ -6,7 +6,8 @@ import {
   Wifi, Watch, Tablet, CreditCard, Package, Zap, Gift, Check, Minus, ArrowUpCircle, UserPlus, Maximize2, Shield
 } from 'lucide-react';
 import {
-  BarChart, Bar, XAxis, ResponsiveContainer, Tooltip, CartesianGrid
+  BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Tooltip, CartesianGrid,
+  AreaChart, Area
 } from 'recharts';
 
 /* ------------------------------------------------------------------------
@@ -117,6 +118,10 @@ const HIDDEN_IN_PICKER = ['Monthly Spiff', 'Other'];
 // Normalizes old string-only categories (from before rates existed) into the new object shape
 // Category names that changed after they were already in use — old name -> new name.
 // Kept as a table so future renames (like this one) don't need bespoke logic.
+// Passcode gating the hidden developer settings. Changeable in-app once
+// unlocked; this is only the fallback for a device that hasn't set one.
+const DEFAULT_DEV_PIN = '070920';
+
 const CATEGORY_RENAMES = {
   'Accessory': 'Accessories',
   'Protection <360>': 'Protection 360',
@@ -1317,7 +1322,7 @@ function SaleModal({ open, onClose, onSave, categories, initialPlan, spiffs, cus
                     </div>
                   )}
                 </div>
-                <div className="font-display tabular" style={{ fontSize: 14, fontWeight: 800, color: 'var(--positive)' }}>{fmtMoney(it.amount)}</div>
+                <div className="font-display tabular" style={{ fontSize: 14, fontWeight: 800, color: 'var(--money)' }}>{fmtMoney(it.amount)}</div>
                 <button style={styles.iconBtnSm} onClick={() => removeItem(it.id)}><X size={13} /></button>
               </div>
             );
@@ -1807,7 +1812,7 @@ function CustomerModal({ open, onClose, onSave, onDelete, initial, commissions }
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
             <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--ink-soft)' }}>TRANSACTIONS</div>
             {history.length > 0 && (
-              <div className="font-display tabular" style={{ fontSize: 13, fontWeight: 800, color: 'var(--positive)' }}>{fmtMoney(historyTotal)}</div>
+              <div className="font-display tabular" style={{ fontSize: 13, fontWeight: 800, color: 'var(--money)' }}>{fmtMoney(historyTotal)}</div>
             )}
           </div>
           {history.length === 0 ? (
@@ -1869,6 +1874,7 @@ export default function App() {
   const [tab, setTab] = useState('dashboard');
   const [statPeriod, setStatPeriod] = useState('month');
   const [saleMonth, setSaleMonth] = useState(() => new Date().toISOString().slice(0, 7));
+  const [saleDay, setSaleDay] = useState(''); // '' = whole month
   const [goalMonth, setGoalMonth] = useState(() => new Date().toISOString().slice(0, 7));
   const [customerSearch, setCustomerSearch] = useState('');
   const [showSaleModal, setShowSaleModal] = useState(false);
@@ -1891,17 +1897,44 @@ export default function App() {
   const [publishBusy, setPublishBusy] = useState(false);
   const [toast, setToast] = useState('');
   const [showRates, setShowRates] = useState(false);
+  const [pinPadOpen, setPinPadOpen] = useState(false);
+  const [pinEntry, setPinEntry] = useState('');
+  const [pinError, setPinError] = useState('');
+  const [devPin, setDevPin] = useState(DEFAULT_DEV_PIN);
+  const [newPin, setNewPin] = useState('');
   const rateTapCountRef = React.useRef(0);
   const rateTapTimerRef = React.useRef(null);
   const RATE_TAP_TARGET = 7;
 
   function handleRatesTap() {
+    if (showRates) return; // already unlocked this session
     rateTapCountRef.current += 1;
     if (rateTapTimerRef.current) clearTimeout(rateTapTimerRef.current);
     rateTapTimerRef.current = setTimeout(() => { rateTapCountRef.current = 0; }, 1200);
     if (rateTapCountRef.current >= RATE_TAP_TARGET) {
       rateTapCountRef.current = 0;
-      setShowRates(true);
+      setPinEntry('');
+      setPinError('');
+      setPinPadOpen(true);
+    }
+  }
+
+  function pressPin(digit) {
+    setPinError('');
+    const next = (pinEntry + digit).slice(0, 6);
+    setPinEntry(next);
+    if (next.length === 6) {
+      // Small delay so the last dot visibly fills before the pad reacts.
+      setTimeout(() => {
+        if (next === devPin) {
+          setPinPadOpen(false);
+          setPinEntry('');
+          setShowRates(true);
+        } else {
+          setPinError('Incorrect passcode');
+          setPinEntry('');
+        }
+      }, 140);
     }
   }
 
@@ -1927,7 +1960,7 @@ export default function App() {
   // white regardless of theme, since the .theme-dark class only reaches the
   // column, not the page itself.
   useEffect(() => {
-    const bg = isDark ? '#0B0B10' : '#F2F2F6';
+    const bg = isDark ? '#0B0B10' : '#E6E6EE';
     document.documentElement.style.background = bg;
     document.body.style.background = bg;
   }, [isDark]);
@@ -1955,6 +1988,9 @@ export default function App() {
 
     const p = await safeGet('profile', false);
     if (p) { try { setProfile(JSON.parse(p.value)); } catch (e) {} }
+
+    const dp = await safeGet('devPin', false);
+    if (dp) { try { const v = JSON.parse(dp.value); if (/^\d{6}$/.test(v)) setDevPin(v); } catch (e) {} }
 
     const c = await safeGet('categories', false);
     if (c) {
@@ -2316,6 +2352,43 @@ export default function App() {
     return Math.max(0, Math.min(5, Math.ceil(pct * 5)));
   }, [myTotals, statPeriod]);
 
+  // Cumulative earnings across the current month, with a straight-line pace
+  // reference so it's clear whether you're running ahead of or behind an even
+  // daily split. Days after today are left null so the line stops at today
+  // rather than flattening out to the right edge.
+  const monthTrend = useMemo(() => {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = now.getMonth();
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+    const today = now.getDate();
+
+    const byDay = new Array(daysInMonth + 1).fill(0);
+    commissions.forEach(c => {
+      if (c.repName !== myName) return;
+      const d = new Date(c.date);
+      if (d.getFullYear() !== year || d.getMonth() !== month) return;
+      byDay[d.getDate()] += Number(c.amount || 0);
+    });
+
+    let running = 0;
+    const rows = [];
+    for (let day = 1; day <= daysInMonth; day++) {
+      if (day <= today) running += byDay[day];
+      rows.push({
+        day,
+        label: String(day),
+        earned: day <= today ? Math.round(running * 100) / 100 : null,
+      });
+    }
+
+    const mtd = running;
+    const perDay = today > 0 ? mtd / today : 0;
+    const projected = Math.round(perDay * daysInMonth * 100) / 100;
+
+    return { rows, mtd: Math.round(mtd * 100) / 100, projected, today, daysInMonth };
+  }, [commissions, myName]);
+
   const last7 = useMemo(() => {
     const days = [];
     for (let i = 6; i >= 0; i--) {
@@ -2340,7 +2413,19 @@ export default function App() {
     () => mySales.filter(s => (s.date || '').slice(0, 7) === saleMonth),
     [mySales, saleMonth]
   );
-  const monthTotal = useMemo(() => monthSales.reduce((s, c) => s + Number(c.amount || 0), 0), [monthSales]);
+  // When a specific day is picked, narrow to just that date.
+  const shownSales = useMemo(
+    () => (saleDay ? monthSales.filter(s => (s.date || '').slice(0, 10) === saleDay) : monthSales),
+    [monthSales, saleDay]
+  );
+  const shownTotal = useMemo(() => shownSales.reduce((s, c) => s + Number(c.amount || 0), 0), [shownSales]);
+
+  // Last day of the shown month, so the day picker can't wander outside it.
+  const monthDayBounds = useMemo(() => {
+    const [y, m] = saleMonth.split('-').map(Number);
+    const last = new Date(y, m, 0).getDate();
+    return { min: `${saleMonth}-01`, max: `${saleMonth}-${String(last).padStart(2, '0')}` };
+  }, [saleMonth]);
 
   function monthLabel(ym) {
     const [y, m] = ym.split('-').map(Number);
@@ -2468,7 +2553,7 @@ export default function App() {
                   </div>
                   <SignalBars level={heroStrength} height={20} barWidth={4} gap={3} color="var(--accent-2)" />
                 </div>
-                <div className="font-display tabular" style={{ fontSize: 46, fontWeight: 900, margin: '8px 0 2px', letterSpacing: '-0.04em', lineHeight: 1 }}>
+                <div className="font-display tabular" style={{ fontSize: 46, fontWeight: 800, margin: '8px 0 2px', letterSpacing: '0.03em', lineHeight: 1.05 }}>
                   {fmtMoney(heroValue)}
                 </div>
               </div>
@@ -2481,7 +2566,7 @@ export default function App() {
                   className="rise press" style={{ ...styles.statCard, animationDelay: `${80 + i * 60}ms` }}
                 >
                   <div style={{ fontSize: 10, color: 'var(--ink-faint)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em' }}>{p}</div>
-                  <div className="font-display tabular" style={{ fontSize: 16.5, fontWeight: 800, marginTop: 3, color: 'var(--ink)' }}>{fmtMoney(myTotals[p])}</div>
+                  <div className="font-display tabular" style={{ fontSize: 16.5, fontWeight: 800, marginTop: 3, color: 'var(--money)' }}>{fmtMoney(myTotals[p])}</div>
                 </button>
               ))}
             </div>
@@ -2518,19 +2603,67 @@ export default function App() {
               </div>
             </div>
 
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', margin: '22px 2px 10px' }}>
-              <div className="font-display" style={{ fontWeight: 800, fontSize: 13.5 }}>Recent sales</div>
-              <button onClick={() => setTab('sales')} style={styles.linkBtn}>See all <ChevronRight size={13} /></button>
-            </div>
-            {mySales.length === 0 ? (
-              <EmptyState icon={DollarSign} title="No Sales" />
-            ) : (
-              mySales.slice(0, 5).map((s, i) => (
-                <div key={s.id} className="rise" style={{ animationDelay: `${i * 45}ms` }}>
-                  <SaleRow sale={s} customers={customers} />
+            <div style={{ ...styles.card, marginTop: 10 }} className="rise">
+              <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 12 }}>
+                <TrendingUp size={15} color="var(--accent)" />
+                <div className="font-display" style={{ fontWeight: 800, fontSize: 13.5 }}>This month's pace</div>
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'flex-end', gap: 20, marginBottom: 14 }}>
+                <div>
+                  <div style={{ fontSize: 10.5, color: 'var(--ink-faint)', fontWeight: 700, letterSpacing: '0.05em', marginBottom: 2 }}>SO FAR</div>
+                  <div className="font-display tabular" style={{ fontSize: 20, fontWeight: 800, color: 'var(--money)', letterSpacing: '0.01em' }}>
+                    {fmtMoney(monthTrend.mtd)}
+                  </div>
                 </div>
-              ))
-            )}
+                <div>
+                  <div style={{ fontSize: 10.5, color: 'var(--ink-faint)', fontWeight: 700, letterSpacing: '0.05em', marginBottom: 2 }}>ON PACE FOR</div>
+                  <div className="font-display tabular" style={{ fontSize: 20, fontWeight: 800, color: 'var(--accent)', letterSpacing: '0.01em' }}>
+                    {fmtMoney(monthTrend.projected)}
+                  </div>
+                </div>
+              </div>
+
+              <div style={{ height: 130 }}>
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart data={monthTrend.rows} margin={{ top: 4, right: 4, left: 0, bottom: 0 }}>
+                    <defs>
+                      <linearGradient id="trendGrad" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor="var(--accent)" stopOpacity={0.35} />
+                        <stop offset="100%" stopColor="var(--accent)" stopOpacity={0.02} />
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid vertical={false} stroke="var(--border)" />
+                    <XAxis
+                      dataKey="label" tickLine={false} axisLine={false}
+                      interval="preserveStartEnd" minTickGap={24}
+                      tick={{ fontSize: 10.5, fill: 'var(--ink-faint)' }}
+                    />
+                    <YAxis
+                      tickLine={false} axisLine={false} width={44}
+                      tick={{ fontSize: 10.5, fill: 'var(--ink-faint)' }}
+                      tickFormatter={(v) => `$${v >= 1000 ? `${Math.round(v / 100) / 10}k` : Math.round(v)}`}
+                    />
+                    <Tooltip
+                      formatter={(v) => fmtMoney(v)}
+                      labelFormatter={(l) => `Day ${l}`}
+                      contentStyle={{
+                        borderRadius: 12, border: '1px solid var(--border)', fontSize: 12,
+                        boxShadow: 'var(--shadow-md)', background: 'var(--surface)', color: 'var(--ink)',
+                      }}
+                      labelStyle={{ color: 'var(--ink)', fontWeight: 700, marginBottom: 2 }}
+                      itemStyle={{ color: 'var(--ink)' }}
+                    />
+                    <Area
+                      type="monotone" dataKey="earned" stroke="var(--accent)" strokeWidth={2.4}
+                      fill="url(#trendGrad)" connectNulls={false}
+                      dot={false} activeDot={{ r: 4, fill: 'var(--accent)' }}
+                      animationDuration={620}
+                    />
+                  </AreaChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
           </div>
         )}
 
@@ -2554,22 +2687,27 @@ export default function App() {
             {salesSubTab === 'sales' ? (
               <>
                 <input
-                  type="month" value={saleMonth} onChange={e => setSaleMonth(e.target.value)}
+                  type="date" value={saleDay || monthDayBounds.min}
+                  onChange={e => {
+                    const v = e.target.value;
+                    if (!v) return;
+                    setSaleMonth(v.slice(0, 7));
+                    setSaleDay(v);
+                  }}
                   style={{ ...styles.input, borderRadius: 15, marginBottom: 8 }}
                 />
 
                 <div style={{ ...styles.card, borderRadius: 15, padding: '11px 13px', marginBottom: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }} className="rise">
-                  <div>
-                    <div style={{ fontSize: 11.5, color: 'var(--ink-soft)', fontWeight: 600 }}>{monthLabel(saleMonth)}</div>
-                    <div style={{ fontSize: 11, color: 'var(--ink-faint)' }}>{monthSales.length} transaction{monthSales.length === 1 ? '' : 's'}</div>
+                  <div style={{ fontSize: 12, color: 'var(--ink-soft)', fontWeight: 600 }}>
+                    {shownSales.length} transaction{shownSales.length === 1 ? '' : 's'}
                   </div>
-                  <div className="font-display tabular" style={{ fontSize: 20, fontWeight: 800 }}>{fmtMoney(monthTotal)}</div>
+                  <div className="font-display tabular" style={{ fontSize: 20, fontWeight: 800, color: 'var(--money)' }}>{fmtMoney(shownTotal)}</div>
                 </div>
 
-                {monthSales.length === 0 ? (
+                {shownSales.length === 0 ? (
                   <EmptyState icon={DollarSign} title="No Sales" />
                 ) : (
-                  monthSales.map((s, i) => (
+                  shownSales.map((s, i) => (
                     <div key={s.id} className="rise" style={{ animationDelay: `${Math.min(i, 8) * 40}ms` }}>
                       <SaleRow sale={s} customers={customers} onDelete={() => deleteCommission(s.id)} />
                     </div>
@@ -3161,6 +3299,31 @@ export default function App() {
                   )}
                 </div>
 
+                <div style={styles.adminSectionLabel}><Shield size={13} />Passcode</div>
+                <div style={styles.card}>
+                  <div style={{ fontSize: 12.5, color: 'var(--ink-soft)', marginBottom: 12, lineHeight: 1.5 }}>
+                    Six digits, required after the seven taps. Stays on this device.
+                  </div>
+                  <input
+                    type="tel" inputMode="numeric" maxLength={6}
+                    value={newPin} onChange={e => setNewPin(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                    placeholder="New 6-digit passcode"
+                    style={{ ...styles.input, marginBottom: 8, letterSpacing: '0.2em' }}
+                  />
+                  <button
+                    style={{ ...styles.secondaryBtn, opacity: newPin.length === 6 ? 1 : 0.5 }}
+                    disabled={newPin.length !== 6}
+                    onClick={async () => {
+                      setDevPin(newPin);
+                      await persist('devPin', newPin);
+                      setNewPin('');
+                      flashToast('Passcode updated');
+                    }}
+                  >
+                    <Check size={16} style={{ marginRight: 6 }} /> Save passcode
+                  </button>
+                </div>
+
               </>
             )}
           </div>
@@ -3181,6 +3344,60 @@ export default function App() {
           <NavBtn icon={SettingsIcon} label="Settings" active={tab === 'settings'} onClick={() => { setTab('settings'); handleRatesTap(); }} />
         </div>
       </div>
+
+      {pinPadOpen && (
+        <div style={styles.pinOverlay} onClick={() => setPinPadOpen(false)}>
+          <div style={styles.pinCard} onClick={(e) => e.stopPropagation()}>
+            <div style={styles.pinLockRing}>
+              <Shield size={17} color="var(--accent)" strokeWidth={2.1} />
+            </div>
+
+            <div className="font-display" style={{ fontWeight: 800, fontSize: 15, marginTop: 12 }}>
+              Enter Passcode
+            </div>
+
+            <div style={{ display: 'flex', gap: 10, marginTop: 16 }}>
+              {[0, 1, 2, 3, 4, 5].map(i => (
+                <div
+                  key={i}
+                  style={{
+                    width: 11, height: 11, borderRadius: '50%',
+                    background: i < pinEntry.length ? 'var(--accent)' : 'transparent',
+                    border: `1.5px solid ${i < pinEntry.length ? 'var(--accent)' : 'var(--border)'}`,
+                    transform: i < pinEntry.length ? 'scale(1.12)' : 'scale(1)',
+                    transition: 'background 160ms ease, border-color 160ms ease, transform 160ms ease',
+                  }}
+                />
+              ))}
+            </div>
+
+            <div style={{ height: 16, marginTop: 10, fontSize: 11.5, color: '#DC2626', fontWeight: 600 }}>
+              {pinError}
+            </div>
+
+            <div style={styles.pinGrid}>
+              {['1', '2', '3', '4', '5', '6', '7', '8', '9'].map(d => (
+                <button key={d} className="press" style={styles.pinKey} onClick={() => pressPin(d)}>{d}</button>
+              ))}
+              <button
+                className="press" style={styles.pinKeyGhost}
+                onClick={() => setPinPadOpen(false)}
+              >
+                Cancel
+              </button>
+              <button className="press" style={styles.pinKey} onClick={() => pressPin('0')}>0</button>
+              <button
+                className="press" style={styles.pinKeyGhost}
+                onClick={() => { setPinEntry(pinEntry.slice(0, -1)); setPinError(''); }}
+                aria-label="Delete"
+                disabled={!pinEntry.length}
+              >
+                <ChevronLeft size={18} strokeWidth={2.4} style={{ opacity: pinEntry.length ? 1 : 0.3 }} />
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {toast && <div style={styles.toast}>{toast}</div>}
 
@@ -3243,41 +3460,37 @@ function SaleRow({ sale, customers, onDelete }) {
   }
 
   const title = multi ? `${items.length} items` : items[0].category;
-  const soloDetail = multi ? '' : itemDetail(items[0]);
 
   return (
     <div style={styles.saleRow} className="lift">
       <div style={{ width: 4, alignSelf: 'stretch', borderRadius: 2, background: 'var(--accent)' }} />
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div
-          style={{ cursor: multi ? 'pointer' : 'default' }}
-          onClick={() => multi && setExpanded(v => !v)}
-        >
+        <div style={{ cursor: 'pointer' }} onClick={() => setExpanded(v => !v)}>
           <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'center' }}>
-            <span style={{ fontWeight: 700, fontSize: 14, display: 'flex', alignItems: 'center', gap: 4 }}>
+            <span style={{ fontWeight: 700, fontSize: 14 }}>
               {title}
-              {multi && (
-                <ChevronDown
-                  size={13} color="var(--ink-faint)"
-                  style={{ transform: expanded ? 'rotate(180deg)' : 'none', transition: 'transform 180ms ease' }}
-                />
-              )}
             </span>
-            <span className="font-display tabular" style={{ fontWeight: 800, fontSize: 14, color: 'var(--positive)' }}>{fmtMoney(sale.amount)}</span>
+            <span className="font-display tabular" style={{ fontWeight: 800, fontSize: 14, color: 'var(--money)' }}>{fmtMoney(sale.amount)}</span>
           </div>
-          <div style={{ fontSize: 12, color: customer ? 'var(--ink)' : 'var(--ink-soft)', marginTop: 1, fontWeight: customer ? 600 : 400 }}>
-            {fmtDateNice(sale.date)}{customer ? ` · ${customer.name}` : ''}
-          </div>
-          {soloDetail && <div style={{ fontSize: 11, color: 'var(--ink-faint)', marginTop: 1 }}>{soloDetail}</div>}
-          {multi && !expanded && (
-            <div style={{ fontSize: 11, color: 'var(--ink-faint)', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-              {items.map(i => i.category).join(' · ')}
-            </div>
-          )}
         </div>
 
-        {multi && expanded && (
+        {expanded && (
           <div style={{ marginTop: 9, paddingTop: 9, borderTop: '1px solid var(--border)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
+              <Calendar size={12} color="var(--ink-faint)" style={{ flexShrink: 0 }} />
+              <span style={{ fontSize: 11.5, color: 'var(--ink-soft)', fontWeight: 600 }}>
+                {fmtDateNice(sale.date)}
+              </span>
+              {customer && (
+                <>
+                  <span style={{ color: 'var(--ink-faint)', fontSize: 11 }}>·</span>
+                  <span style={{ fontSize: 11.5, color: 'var(--ink-soft)', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {customer.name}
+                  </span>
+                </>
+              )}
+            </div>
+
             {items.map((it, i) => {
               const Icon = categoryIcon(it.category);
               const d = itemDetail(it);
@@ -3286,12 +3499,18 @@ function SaleRow({ sale, customers, onDelete }) {
                   <Icon size={14} strokeWidth={2.1} color="var(--accent)" style={{ flexShrink: 0 }} />
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontSize: 12.5, fontWeight: 600 }}>{it.category}</div>
-                    {d && <div style={{ fontSize: 10.5, color: 'var(--ink-faint)' }}>{d}</div>}
+                    {d && <div style={{ fontSize: 10.5, color: 'var(--ink-faint)', lineHeight: 1.4 }}>{d}</div>}
                   </div>
                   <div className="font-display tabular" style={{ fontSize: 12.5, fontWeight: 700 }}>{fmtMoney(it.amount)}</div>
                 </div>
               );
             })}
+
+            {sale.notes && (
+              <div style={{ fontSize: 11, color: 'var(--ink-faint)', marginTop: 8, paddingTop: 8, borderTop: '1px solid var(--border)', lineHeight: 1.5 }}>
+                {sale.notes}
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -3352,13 +3571,13 @@ const GLOBAL_CSS = `
 }
 
 :root {
-  --bg: #F2F2F6;
+  --bg: #E6E6EE;
   --surface: #FFFFFF;
   --carbon: #0D0D12;
   --carbon-2: #22222E;
   --ink: #0F0F14;
-  --ink-soft: #64646F;
-  --ink-faint: #9C9CAA;
+  --ink-soft: #5C5C68;
+  --ink-faint: #8E8E9C;
   --accent: #E20074;
   --accent-2: #FF2D9E;
   --accent-deep: #96004D;
@@ -3369,14 +3588,15 @@ const GLOBAL_CSS = `
   --spiff: #C77700;
   --spiff-soft: rgba(255,179,0,0.14);
   --spiff-border: rgba(255,179,0,0.35);
-  --border: #E7E7EE;
-  --track: rgba(15,15,20,0.045);
+  --border: #D2D2DE;
+  --track: rgba(15,15,20,0.07);
   --neutral-soft: rgba(15,15,20,0.06);
   --nav-bg: rgba(255,255,255,0.92);
   --solid-btn-bg: #0D0D12;
   --solid-btn-fg: #FFFFFF;
-  --shadow-sm: 0 1px 2px rgba(15,15,20,0.05);
-  --shadow-md: 0 4px 14px rgba(15,15,20,0.07);
+  --shadow-sm: 0 1px 3px rgba(15,15,20,0.10), 0 1px 2px rgba(15,15,20,0.05);
+  --shadow-md: 0 6px 18px rgba(15,15,20,0.13);
+  --money: #0F0F14;
   --shadow-glow: 0 10px 30px rgba(226,0,116,0.28);
   color-scheme: light;
 }
@@ -3407,6 +3627,7 @@ const GLOBAL_CSS = `
   --solid-btn-fg: #F2F2F6;
   --shadow-sm: 0 2px 6px rgba(0,0,0,0.6);
   --shadow-md: 0 6px 20px rgba(0,0,0,0.65);
+  --money: #F7F7FA;
   --shadow-glow: 0 10px 30px rgba(255,45,158,0.28);
   color-scheme: dark;
 }
@@ -3461,14 +3682,14 @@ button { color: inherit; -webkit-appearance: none; appearance: none; -webkit-tap
    version. Cards keep their own solid surfaces, so this only ever shows
    in the gaps around and between content. */
 .app-shell:not(.theme-dark) {
-  background-color: #F2F2F6 !important;
+  background-color: #E6E6EE !important;
   background-image:
-    radial-gradient(circle farthest-side at 0% 50%, #F2F2F6 23.5%, rgba(242,242,246,0) 0) 21px 30px,
-    radial-gradient(circle farthest-side at 0% 50%, #E0E0E9 24%, rgba(224,224,233,0) 0) 19px 30px,
-    linear-gradient(#F2F2F6 14%, rgba(242,242,246,0) 0, rgba(242,242,246,0) 85%, #F2F2F6 0) 0 0,
-    linear-gradient(150deg, #F2F2F6 24%, #E0E0E9 0, #E0E0E9 26%, rgba(242,242,246,0) 0, rgba(242,242,246,0) 74%, #E0E0E9 0, #E0E0E9 76%, #F2F2F6 0) 0 0,
-    linear-gradient(30deg, #F2F2F6 24%, #E0E0E9 0, #E0E0E9 26%, rgba(242,242,246,0) 0, rgba(242,242,246,0) 74%, #E0E0E9 0, #E0E0E9 76%, #F2F2F6 0) 0 0,
-    linear-gradient(90deg, #E0E0E9 2%, #F2F2F6 0, #F2F2F6 98%, #E0E0E9 0) 0 0 !important;
+    radial-gradient(circle farthest-side at 0% 50%, #E6E6EE 23.5%, rgba(230,230,238,0) 0) 21px 30px,
+    radial-gradient(circle farthest-side at 0% 50%, #D4D4E0 24%, rgba(212,212,224,0) 0) 19px 30px,
+    linear-gradient(#E6E6EE 14%, rgba(230,230,238,0) 0, rgba(230,230,238,0) 85%, #E6E6EE 0) 0 0,
+    linear-gradient(150deg, #E6E6EE 24%, #D4D4E0 0, #D4D4E0 26%, rgba(230,230,238,0) 0, rgba(230,230,238,0) 74%, #D4D4E0 0, #D4D4E0 76%, #E6E6EE 0) 0 0,
+    linear-gradient(30deg, #E6E6EE 24%, #D4D4E0 0, #D4D4E0 26%, rgba(230,230,238,0) 0, rgba(230,230,238,0) 74%, #D4D4E0 0, #D4D4E0 76%, #E6E6EE 0) 0 0,
+    linear-gradient(90deg, #D4D4E0 2%, #E6E6EE 0, #E6E6EE 98%, #D4D4E0 0) 0 0 !important;
   background-size: 40px 60px !important;
   background-attachment: scroll !important;
 }
@@ -3826,6 +4047,37 @@ const styles = {
   },
   sheetHandle: { width: 38, height: 4, borderRadius: 2, background: 'var(--border)', margin: '0 auto 14px' },
 
+  pinOverlay: {
+    position: 'absolute', inset: 0, zIndex: 40,
+    background: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(6px)', WebkitBackdropFilter: 'blur(6px)',
+    display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24,
+  },
+  pinCard: {
+    width: '100%', maxWidth: 300, background: 'var(--surface)', borderRadius: 24,
+    border: '1px solid var(--border)', boxShadow: 'var(--shadow-md)',
+    padding: '24px 22px 20px', display: 'flex', flexDirection: 'column', alignItems: 'center',
+  },
+  pinLockRing: {
+    width: 46, height: 46, borderRadius: '50%', background: 'var(--accent-soft)',
+    display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+  },
+  pinGrid: {
+    display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12,
+    width: '100%', marginTop: 4, justifyItems: 'center',
+  },
+  pinKey: {
+    width: 62, height: 62, borderRadius: '50%',
+    border: '1px solid var(--border)', background: 'var(--bg)',
+    color: 'var(--ink)', fontSize: 21, fontWeight: 600, cursor: 'pointer',
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+    fontVariantNumeric: 'tabular-nums', transition: 'background 140ms ease',
+  },
+  pinKeyGhost: {
+    width: 62, height: 62, borderRadius: '50%',
+    border: 'none', background: 'transparent',
+    color: 'var(--ink-soft)', fontSize: 13, fontWeight: 600, cursor: 'pointer',
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+  },
   toast: {
     position: 'absolute', bottom: 96, left: '50%', transform: 'translateX(-50%)', background: 'var(--carbon)',
     color: '#fff', padding: '10px 16px', borderRadius: 12, fontSize: 12.5, fontWeight: 600,
