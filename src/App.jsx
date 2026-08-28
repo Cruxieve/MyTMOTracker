@@ -1013,13 +1013,11 @@ function MonthStepper({ value, onChange, label }) {
   );
 }
 
-function SaleModal({ open, onClose, onSave, categories, initialPlan, spiffs, customers, onCreateCustomer }) {
+function SaleModal({ open, onClose, onSave, categories, initialPlan, spiffs, customers, onCreateCustomer, onEditCustomer }) {
   const emptyDraft = { category: '', baseValue: '', qty: '1', manualAmount: '', planName: '', lines: '1', alreadyProtected: false, isBYOD: false, isEssential: false, isPriority: false };
   const emptyForm = { date: todayInputValue(), notes: '', items: [], customerId: '' };
   const [form, setForm] = useState(emptyForm);
   const [draft, setDraft] = useState(emptyDraft);
-  const [linkOpen, setLinkOpen] = useState(false);
-  const [quickAddOpen, setQuickAddOpen] = useState(false);
   const [quickAddName, setQuickAddName] = useState('');
   const [planPickerOpen, setPlanPickerOpen] = useState(false);
   const [hiPickerOpen, setHiPickerOpen] = useState(false);
@@ -1030,8 +1028,6 @@ function SaleModal({ open, onClose, onSave, categories, initialPlan, spiffs, cus
   useEffect(() => {
     if (!open) return;
     setForm(emptyForm);
-    setLinkOpen(false);
-    setQuickAddOpen(false);
     setQuickAddName('');
     setPlanPickerOpen(false);
     setHiPickerOpen(false);
@@ -1181,9 +1177,7 @@ function SaleModal({ open, onClose, onSave, categories, initialPlan, spiffs, cus
     const newCustomer = await onCreateCustomer(quickAddName);
     if (newCustomer) {
       setForm(f => ({ ...f, customerId: newCustomer.id }));
-      setQuickAddOpen(false);
       setQuickAddName('');
-      setLinkOpen(false);
     }
   }
 
@@ -1234,51 +1228,48 @@ function SaleModal({ open, onClose, onSave, categories, initialPlan, spiffs, cus
         />
       </div>
 
-      {/* customer link — compact, optional, collapsed unless in use */}
+      {/* customer — name field is ready to type in as soon as the sheet opens */}
       {(() => {
         const linkedCustomer = customers?.find(x => x.id === form.customerId);
         if (linkedCustomer) {
           return (
-            <div style={{ ...styles.linkedCustomerRow, marginTop: 14 }}>
+            <div
+              style={{ ...styles.linkedCustomerRow, marginTop: 14, cursor: 'pointer' }}
+              className="press"
+              onClick={() => onEditCustomer && onEditCustomer(linkedCustomer)}
+            >
               <Avatar name={linkedCustomer.name} size={30} />
-              <div style={{ flex: 1, minWidth: 0, fontWeight: 700, fontSize: 13.5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {linkedCustomer.name}
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontWeight: 700, fontSize: 13.5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {linkedCustomer.name}
+                </div>
+                <div style={{ fontSize: 11, color: 'var(--ink-soft)' }}>
+                  {linkedCustomer.phone || linkedCustomer.email || 'Tap to add details'}
+                </div>
               </div>
-              <button style={styles.iconBtnSm} onClick={() => setForm({ ...form, customerId: '' })}><X size={13} /></button>
+              <button
+                style={styles.iconBtnSm}
+                onClick={(e) => { e.stopPropagation(); setForm({ ...form, customerId: '' }); }}
+              >
+                <X size={13} />
+              </button>
             </div>
           );
         }
-        if (!linkOpen) {
-          return (
-            <button className="press" style={{ ...styles.linkCustomerBtn, marginTop: 14 }} onClick={() => setLinkOpen(true)}>
-              <UserPlus size={14} style={{ marginRight: 7 }} /> Link a customer
-            </button>
-          );
-        }
         return (
-          <div style={{ marginTop: 14 }}>
-            {quickAddOpen ? (
-              <div style={{ display: 'flex', gap: 8 }}>
-                <input
-                  value={quickAddName} onChange={e => setQuickAddName(e.target.value)} placeholder="Customer name"
-                  style={{ ...styles.input, flex: 1 }} onKeyDown={e => e.key === 'Enter' && submitQuickAdd()} autoFocus
-                />
-                <button className="press" style={styles.secondaryBtn} onClick={submitQuickAdd}><Check size={16} strokeWidth={2.6} /></button>
-                <button className="press" style={styles.secondaryBtn} onClick={() => { setQuickAddOpen(false); setQuickAddName(''); }}><X size={16} /></button>
-              </div>
-            ) : (
-              <div style={{ display: 'flex', gap: 8 }}>
-                <select
-                  value="" onChange={e => e.target.value === '__new__' ? setQuickAddOpen(true) : setForm({ ...form, customerId: e.target.value })}
-                  style={{ ...styles.input, flex: 1 }} autoFocus
-                >
-                  <option value="">Pick a customer…</option>
-                  {customers?.map(x => <option key={x.id} value={x.id}>{x.name}</option>)}
-                  <option value="__new__">+ Add new customer…</option>
-                </select>
-                <button style={styles.iconBtnSm} onClick={() => setLinkOpen(false)}><X size={14} /></button>
-              </div>
-            )}
+          <div style={{ display: 'flex', gap: 7, alignItems: 'center', marginTop: 14 }}>
+            <input
+              value={quickAddName} onChange={e => setQuickAddName(e.target.value)} placeholder="Customer Name"
+              style={{ ...styles.input, flex: 1, padding: '9px 11px', fontSize: 13 }}
+              onKeyDown={e => e.key === 'Enter' && submitQuickAdd()}
+            />
+            <button
+              className="press"
+              style={{ ...styles.addCustomerBtn, opacity: quickAddName.trim() ? 1 : 0.5 }}
+              disabled={!quickAddName.trim()} onClick={submitQuickAdd} aria-label="Add this customer"
+            >
+              <UserPlus size={16} strokeWidth={2.2} />
+            </button>
           </div>
         );
       })()}
@@ -1746,7 +1737,7 @@ function CustomerModal({ open, onClose, onSave, onDelete, initial, commissions }
   const tag = relationshipTag(initial, history.length > 0);
 
   return (
-    <Sheet open={open} onClose={onClose} title={initial ? 'Edit customer' : 'Add customer'}>
+    <Sheet elevated open={open} onClose={onClose} title={initial ? 'Edit customer' : 'Add customer'}>
       {initial && (
         <div style={{ marginBottom: 16 }}>
           <Badge tag={tag} />
@@ -1882,9 +1873,8 @@ export default function App() {
   const [customerSearch, setCustomerSearch] = useState('');
   const [showSaleModal, setShowSaleModal] = useState(false);
   const [saleModalPlan, setSaleModalPlan] = useState(null);
-  const [planFilter, setPlanFilter] = useState('Standard');
   const [expandedPlan, setExpandedPlan] = useState(null);
-  const [planSubTab, setPlanSubTab] = useState('phone'); // 'phone' | 'internet'
+  const [salesSubTab, setSalesSubTab] = useState('sales'); // 'sales' | 'customers'
   const [customerModal, setCustomerModal] = useState({ open: false, initial: null, id: null });
   const [newCat, setNewCat] = useState({ name: '', calcType: 'manual', rate: '' });
   const [newSpiff, setNewSpiff] = useState({ label: '', categoryName: '', planName: '', amount: '' });
@@ -2383,13 +2373,6 @@ export default function App() {
     return [...list].sort((a, b) => rank(a) - rank(b) || (a.name || '').localeCompare(b.name || ''));
   }, [customers, customerSearch, customerIdsWithSales]);
 
-  const planEligibilities = useMemo(() => Array.from(new Set(PLANS.map(p => p.eligibility))), []);
-  const visiblePlans = useMemo(() => {
-    let list = PLANS;
-    if (planFilter) list = list.filter(p => p.eligibility === planFilter);
-    return list;
-  }, [planFilter]);
-
   /* -------------------------------- rendering -------------------------------- */
 
   if (loading) {
@@ -2553,69 +2536,84 @@ export default function App() {
 
         {tab === 'sales' && (
           <div>
-            <div className="font-display" style={{ fontWeight: 700, fontSize: 18, marginTop: 14, marginBottom: 12 }}>Your sales</div>
-
-            <input
-              type="month" value={saleMonth} onChange={e => setSaleMonth(e.target.value)}
-              style={{ ...styles.input, borderRadius: 15, marginBottom: 8 }}
-            />
-
-            <div style={{ ...styles.card, borderRadius: 15, padding: '11px 13px', marginBottom: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }} className="rise">
-              <div>
-                <div style={{ fontSize: 11.5, color: 'var(--ink-soft)', fontWeight: 600 }}>{monthLabel(saleMonth)}</div>
-                <div style={{ fontSize: 11, color: 'var(--ink-faint)' }}>{monthSales.length} transaction{monthSales.length === 1 ? '' : 's'}</div>
-              </div>
-              <div className="font-display tabular" style={{ fontSize: 20, fontWeight: 800 }}>{fmtMoney(monthTotal)}</div>
+            <div style={styles.segmentRow}>
+              <button
+                onClick={() => setSalesSubTab('sales')}
+                style={salesSubTab === 'sales' ? styles.segmentOn : styles.segment}
+              >
+                Sales
+              </button>
+              <button
+                onClick={() => setSalesSubTab('customers')}
+                style={salesSubTab === 'customers' ? styles.segmentOn : styles.segment}
+              >
+                Customers
+              </button>
             </div>
 
-            {monthSales.length === 0 ? (
-              <EmptyState icon={DollarSign} title="No Sales" />
-            ) : (
-              monthSales.map((s, i) => (
-                <div key={s.id} className="rise" style={{ animationDelay: `${Math.min(i, 8) * 40}ms` }}>
-                  <SaleRow sale={s} customers={customers} onDelete={() => deleteCommission(s.id)} />
-                </div>
-              ))
-            )}
-          </div>
-        )}
+            {salesSubTab === 'sales' ? (
+              <>
+                <input
+                  type="month" value={saleMonth} onChange={e => setSaleMonth(e.target.value)}
+                  style={{ ...styles.input, borderRadius: 15, marginBottom: 8 }}
+                />
 
-        {tab === 'customers' && (
-          <div>
-            <div style={{ position: 'relative', marginTop: 14, marginBottom: 14 }}>
-              <Search size={16} style={{ position: 'absolute', left: 12, top: 12, color: 'var(--ink-faint)' }} />
-              <input
-                value={customerSearch} onChange={e => setCustomerSearch(e.target.value)}
-                placeholder="Search customers" style={{ ...styles.input, paddingLeft: 34 }}
-              />
-            </div>
-            {visibleCustomers.length === 0 ? (
-              <EmptyState icon={Users} title="No Customers" />
-            ) : (
-              visibleCustomers.map((c, i) => {
-                const stats = customerStats[c.id];
-                const tag = relationshipTag(c, !!stats);
-                return (
-                  <div
-                    key={c.id} style={{ ...styles.customerRow, animationDelay: `${Math.min(i, 8) * 40}ms` }}
-                    className="lift press rise"
-                    onClick={() => setCustomerModal({ open: true, initial: c, id: c.id })}
-                  >
-                    <Avatar name={c.name} />
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontWeight: 700, fontSize: 14.5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.name}</div>
-                      <div style={{ fontSize: 12, color: 'var(--ink-soft)' }}>
-                        {stats
-                          ? `${fmtMoney(stats.total)} · ${stats.count} sale${stats.count === 1 ? '' : 's'}`
-                          : c.nextFollowUp
-                            ? `Follow up ${fmtDateNice(c.nextFollowUp)}`
-                            : (c.phone || c.email || 'No contact info')}
-                      </div>
-                    </div>
-                    <Badge tag={tag} />
+                <div style={{ ...styles.card, borderRadius: 15, padding: '11px 13px', marginBottom: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }} className="rise">
+                  <div>
+                    <div style={{ fontSize: 11.5, color: 'var(--ink-soft)', fontWeight: 600 }}>{monthLabel(saleMonth)}</div>
+                    <div style={{ fontSize: 11, color: 'var(--ink-faint)' }}>{monthSales.length} transaction{monthSales.length === 1 ? '' : 's'}</div>
                   </div>
-                );
-              })
+                  <div className="font-display tabular" style={{ fontSize: 20, fontWeight: 800 }}>{fmtMoney(monthTotal)}</div>
+                </div>
+
+                {monthSales.length === 0 ? (
+                  <EmptyState icon={DollarSign} title="No Sales" />
+                ) : (
+                  monthSales.map((s, i) => (
+                    <div key={s.id} className="rise" style={{ animationDelay: `${Math.min(i, 8) * 40}ms` }}>
+                      <SaleRow sale={s} customers={customers} onDelete={() => deleteCommission(s.id)} />
+                    </div>
+                  ))
+                )}
+              </>
+            ) : (
+              <>
+                <div style={{ position: 'relative', marginBottom: 8 }}>
+                  <Search size={16} style={{ position: 'absolute', left: 12, top: 12, color: 'var(--ink-faint)' }} />
+                  <input
+                    value={customerSearch} onChange={e => setCustomerSearch(e.target.value)}
+                    placeholder="Search customers" style={{ ...styles.input, borderRadius: 15, paddingLeft: 34 }}
+                  />
+                </div>
+                {visibleCustomers.length === 0 ? (
+                  <EmptyState icon={Users} title="No Customers" />
+                ) : (
+                  visibleCustomers.map((c, i) => {
+                    const stats = customerStats[c.id];
+                    const tag = relationshipTag(c, !!stats);
+                    return (
+                      <div
+                        key={c.id} style={{ ...styles.customerRow, animationDelay: `${Math.min(i, 8) * 40}ms` }}
+                        className="lift press rise"
+                        onClick={() => setCustomerModal({ open: true, initial: c, id: c.id })}
+                      >
+                        <Avatar name={c.name} />
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontWeight: 700, fontSize: 14.5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.name}</div>
+                          <div style={{ fontSize: 12, color: 'var(--ink-soft)' }}>
+                            {stats
+                              ? `${fmtMoney(stats.total)} · ${stats.count} sale${stats.count === 1 ? '' : 's'}`
+                              : c.nextFollowUp
+                                ? `Follow up ${fmtDateNice(c.nextFollowUp)}`
+                                : (c.phone || c.email || 'No contact info')}
+                          </div>
+                        </div>
+                        <Badge tag={tag} />
+                      </div>
+                    );
+                  })
+                )}
+              </>
             )}
           </div>
         )}
@@ -2673,322 +2671,6 @@ export default function App() {
                 </>
               );
             })()}
-          </div>
-        )}
-
-        {tab === 'plans' && (
-          <div>
-            <div style={{ display: 'flex', gap: 6, marginTop: 14, marginBottom: 14, overflowX: 'auto' }}>
-              <button onClick={() => setPlanSubTab('phone')} style={planSubTab === 'phone' ? styles.pillActiveSm : styles.pillSm}>Phone Plans</button>
-              <button onClick={() => setPlanSubTab('internet')} style={planSubTab === 'internet' ? styles.pillActiveSm : styles.pillSm}>Home Internet</button>
-              <button onClick={() => setPlanSubTab('fiber')} style={planSubTab === 'fiber' ? styles.pillActiveSm : styles.pillSm}>Fiber</button>
-              <button onClick={() => setPlanSubTab('watch')} style={planSubTab === 'watch' ? styles.pillActiveSm : styles.pillSm}>Watch</button>
-              <button onClick={() => setPlanSubTab('tablet')} style={planSubTab === 'tablet' ? styles.pillActiveSm : styles.pillSm}>Tablet</button>
-            </div>
-
-            {planSubTab === 'phone' && (
-              <>
-                <div style={styles.sectionDivider} />
-                <div style={{ display: 'flex', gap: 6, marginBottom: 14, overflowX: 'auto' }}>
-                  {planEligibilities.map(e => (
-                    <button key={e} onClick={() => setPlanFilter(e)} style={planFilter === e ? styles.pillActiveSm : styles.pillSm}>{e}</button>
-                  ))}
-                </div>
-
-            {visiblePlans.length === 0 ? (
-              <EmptyState icon={Smartphone} title="No plans found" sub="Try a different search or filter." />
-            ) : (
-              visiblePlans.map((plan, i) => {
-                const isOpen = expandedPlan === plan.name;
-                return (
-                  <div key={plan.name} style={{ ...styles.planCard, animationDelay: `${Math.min(i, 8) * 35}ms` }} className="lift rise">
-                    <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8, cursor: 'pointer' }} onClick={() => setExpandedPlan(isOpen ? null : plan.name)}>
-                      <div style={{ minWidth: 0 }}>
-                        <div style={{ fontWeight: 700, fontSize: 14.5 }}>{plan.name}</div>
-                        <div style={{ fontSize: 12, color: 'var(--ink-soft)', marginTop: 2 }}>{plan.data}</div>
-                        <div style={{ display: 'flex', gap: 6, marginTop: 6, flexWrap: 'wrap' }}>
-                          {plan.eligibility !== 'Standard' && (
-                            <span style={styles.planBadge}>{plan.verification && <ShieldCheck size={11} style={{ marginRight: 3 }} />}{plan.eligibility}</span>
-                          )}
-                          {plan.thirdLineFree && (
-                            <span style={styles.promoBadge}>3rd line free</span>
-                          )}
-                        </div>
-                      </div>
-                      <div style={{ textAlign: 'right', flexShrink: 0 }}>
-                        <div style={{ fontSize: 10.5, color: 'var(--ink-faint)', textDecoration: 'line-through' }}>{fmtMoneyPlain(plan.tiers[0][1])}</div>
-                        <div className="font-display tabular" style={{ fontWeight: 800, fontSize: 15, color: 'var(--positive)' }}>{fmtMoneyPlain(planPriceWithAutopay(plan, plan.tiers[0][0]))}</div>
-                        <div style={{ fontSize: 10.5, color: 'var(--ink-faint)' }}>w/ AutoPay · {plan.tiers[0][0]} line{plan.tiers[0][0] > 1 ? 's' : ''}</div>
-                        <ChevronDown size={15} style={{ marginTop: 4, transform: isOpen ? 'rotate(180deg)' : 'none', color: 'var(--ink-faint)' }} />
-                      </div>
-                    </div>
-
-                    {isOpen && (
-                      <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid var(--border)' }}>
-                        {plan.thirdLineFree && (
-                          <div style={styles.promoCallout}>
-                            <div style={{ fontWeight: 700, fontSize: 12.5, marginBottom: 2 }}>Promo: 3rd line free</div>
-                            <div style={{ fontSize: 11.5, lineHeight: 1.5 }}>
-                              At exactly 3 lines w/ AutoPay: {fmtMoneyPlain(planPriceWithAutopay(plan, 3, true))} normally → {fmtMoneyPlain(planPriceWithAutopay(plan, 3))} with this promo. Limited-time offer; doesn't apply at other line counts and may not stack with other promos.
-                            </div>
-                          </div>
-                        )}
-                        <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--ink-faint)', textTransform: 'uppercase', marginBottom: 6 }}>Price with AutoPay (recommended quote)</div>
-                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 10 }}>
-                          {plan.tiers.map(([lines, price]) => (
-                            <div key={lines} style={lines === 3 && plan.thirdLineFree ? styles.tierChipPromo : styles.tierChip}>
-                              {lines === 3 && plan.thirdLineFree && (
-                                <span style={{ color: 'var(--ink-faint)', textDecoration: 'line-through', marginRight: 4 }}>{fmtMoneyPlain(planPriceWithAutopay(plan, 3, true))}</span>
-                              )}
-                              <span style={{ fontWeight: 700, color: 'var(--positive)' }}>{fmtMoneyPlain(planPriceWithAutopay(plan, lines))}</span>
-                              <span style={{ color: 'var(--ink-faint)' }}> · {lines} line{lines > 1 ? 's' : ''}{lines === 3 && plan.thirdLineFree ? ' (promo)' : ''}</span>
-                            </div>
-                          ))}
-                        </div>
-                        <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--ink-faint)', textTransform: 'uppercase', marginBottom: 6 }}>List price (without AutoPay)</div>
-                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 10 }}>
-                          {plan.tiers.map(([lines, price]) => (
-                            <div key={lines} style={lines === 3 && plan.thirdLineFree ? styles.tierChipPromo : styles.tierChip}>
-                              {lines === 3 && plan.thirdLineFree && (
-                                <span style={{ color: 'var(--ink-faint)', textDecoration: 'line-through', marginRight: 4 }}>{fmtMoneyPlain(price)}</span>
-                              )}
-                              <span style={{ fontWeight: 700 }}>{fmtMoneyPlain(listPriceForLines(plan, lines))}</span>
-                              <span style={{ color: 'var(--ink-faint)' }}> · {lines} line{lines > 1 ? 's' : ''}{lines === 3 && plan.thirdLineFree ? ' (promo)' : ''}</span>
-                            </div>
-                          ))}
-                          {plan.extraLine?.map(([min, max, per], i) => (
-                            <div key={i} style={styles.tierChip}>
-                              <span style={{ fontWeight: 700 }}>+{fmtMoneyPlain(per)}</span>
-                              <span style={{ color: 'var(--ink-faint)' }}> · line{max > min ? 's' : ''} {min}{max > min ? `–${max}` : ''}</span>
-                            </div>
-                          ))}
-                        </div>
-                        <div style={{ fontSize: 11.5, color: 'var(--ink-soft)', marginBottom: 12 }}>
-                          AutoPay saves $5/line/month (up to 8 lines, max $40) with an eligible bank account or debit card.
-                        </div>
-                        <ul style={{ margin: '0 0 12px', paddingLeft: 18, fontSize: 12.5, color: 'var(--ink-soft)', lineHeight: 1.6 }}>
-                          {plan.highlights.map((h, i) => <li key={i}>{h}</li>)}
-                        </ul>
-                        <button
-                          style={styles.secondaryBtn}
-                          onClick={() => { setSaleModalPlan({ plan, lines: plan.thirdLineFree ? 3 : plan.tiers[0][0] }); setShowSaleModal(true); }}
-                        >
-                          <DollarSign size={14} style={{ marginRight: 6 }} /> Log this sale
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                );
-                  })
-                )}
-              </>
-            )}
-
-            {planSubTab === 'internet' && (
-              <>
-                {HOME_INTERNET_PLANS.map((p, i) => {
-                  const isOpen = expandedPlan === p.name;
-                  return (
-                    <div key={p.name} style={{ ...styles.planCard, animationDelay: `${i * 35}ms` }} className="lift rise">
-                      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8, cursor: 'pointer' }} onClick={() => setExpandedPlan(isOpen ? null : p.name)}>
-                        <div style={{ minWidth: 0 }}>
-                          <div style={{ fontWeight: 700, fontSize: 14.5 }}>{p.name}</div>
-                          <div style={{ fontSize: 12, color: 'var(--ink-soft)', marginTop: 2 }}>{p.speed}</div>
-                        </div>
-                        <div style={{ textAlign: 'right', flexShrink: 0 }}>
-                          <div style={{ fontSize: 10.5, color: 'var(--ink-faint)', textDecoration: 'line-through' }}>{fmtMoneyPlain(p.basePrice)}</div>
-                          <div className="font-display tabular" style={{ fontWeight: 800, fontSize: 15, color: 'var(--positive)' }}>{fmtMoneyPlain(homeInternetPriceWithAutopay(p, false))}</div>
-                          <div style={{ fontSize: 10.5, color: 'var(--ink-faint)' }}>w/ AutoPay</div>
-                          <ChevronDown size={15} style={{ marginTop: 4, transform: isOpen ? 'rotate(180deg)' : 'none', color: 'var(--ink-faint)' }} />
-                        </div>
-                      </div>
-
-                      {isOpen && (
-                        <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid var(--border)' }}>
-                          <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--ink-faint)', textTransform: 'uppercase', marginBottom: 6 }}>Pricing</div>
-                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 12 }}>
-                            <div style={styles.tierChip}>
-                              <span style={{ fontWeight: 700 }}>{fmtMoneyPlain(p.basePrice)}</span>
-                              <span style={{ color: 'var(--ink-faint)' }}> · list price</span>
-                            </div>
-                            <div style={styles.tierChip}>
-                              <span style={{ fontWeight: 700, color: 'var(--positive)' }}>{fmtMoneyPlain(homeInternetPriceWithAutopay(p, false))}</span>
-                              <span style={{ color: 'var(--ink-faint)' }}> · w/ AutoPay</span>
-                            </div>
-                            <div style={styles.tierChip}>
-                              <span style={{ fontWeight: 700, color: 'var(--positive)' }}>{fmtMoneyPlain(homeInternetPriceWithAutopay(p, true))}</span>
-                              <span style={{ color: 'var(--ink-faint)' }}> · w/ AutoPay + voice line</span>
-                            </div>
-                          </div>
-                          <ul style={{ margin: '0 0 12px', paddingLeft: 18, fontSize: 12.5, color: 'var(--ink-soft)', lineHeight: 1.6 }}>
-                            {p.highlights.map((h, i2) => <li key={i2}>{h}</li>)}
-                          </ul>
-                          <button
-                            style={styles.secondaryBtn}
-                            onClick={() => { setSaleModalPlan({ homeInternetPlan: p }); setShowSaleModal(true); }}
-                          >
-                            <DollarSign size={14} style={{ marginRight: 6 }} /> Log this sale
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </>
-            )}
-
-            {planSubTab === 'fiber' && (
-              <>
-                {FIBER_PLANS.map((p, i) => {
-                  const isOpen = expandedPlan === p.name;
-                  return (
-                    <div key={p.name} style={{ ...styles.planCard, animationDelay: `${i * 35}ms` }} className="lift rise">
-                      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8, cursor: 'pointer' }} onClick={() => setExpandedPlan(isOpen ? null : p.name)}>
-                        <div style={{ minWidth: 0 }}>
-                          <div style={{ fontWeight: 700, fontSize: 14.5 }}>{p.name}</div>
-                          <div style={{ fontSize: 12, color: 'var(--ink-soft)', marginTop: 2 }}>{p.speed}</div>
-                          {p.promoAutopayPrice != null && (
-                            <span style={{ ...styles.promoBadge, marginTop: 6, display: 'inline-block' }}>Limited-time price</span>
-                          )}
-                        </div>
-                        <div style={{ textAlign: 'right', flexShrink: 0 }}>
-                          <div style={{ fontSize: 10.5, color: 'var(--ink-faint)', textDecoration: 'line-through' }}>{fmtMoneyPlain(p.basePrice)}</div>
-                          <div className="font-display tabular" style={{ fontWeight: 800, fontSize: 15, color: 'var(--positive)' }}>{fmtMoneyPlain(fiberPriceWithAutopay(p))}</div>
-                          <div style={{ fontSize: 10.5, color: 'var(--ink-faint)' }}>w/ AutoPay</div>
-                          <ChevronDown size={15} style={{ marginTop: 4, transform: isOpen ? 'rotate(180deg)' : 'none', color: 'var(--ink-faint)' }} />
-                        </div>
-                      </div>
-
-                      {isOpen && (
-                        <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid var(--border)' }}>
-                          <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--ink-faint)', textTransform: 'uppercase', marginBottom: 6 }}>Pricing</div>
-                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 12 }}>
-                            <div style={styles.tierChip}>
-                              <span style={{ fontWeight: 700 }}>{fmtMoneyPlain(p.basePrice)}</span>
-                              <span style={{ color: 'var(--ink-faint)' }}> · list price</span>
-                            </div>
-                            <div style={p.promoAutopayPrice != null ? styles.tierChipPromo : styles.tierChip}>
-                              {p.promoAutopayPrice != null && (
-                                <span style={{ color: 'var(--ink-faint)', textDecoration: 'line-through', marginRight: 4 }}>{fmtMoneyPlain(fiberPriceWithAutopay(p, true))}</span>
-                              )}
-                              <span style={{ fontWeight: 700, color: 'var(--positive)' }}>{fmtMoneyPlain(fiberPriceWithAutopay(p))}</span>
-                              <span style={{ color: 'var(--ink-faint)' }}> · w/ AutoPay{p.promoAutopayPrice != null ? ' (limited-time)' : ''}</span>
-                            </div>
-                          </div>
-                          <ul style={{ margin: '0 0 12px', paddingLeft: 18, fontSize: 12.5, color: 'var(--ink-soft)', lineHeight: 1.6 }}>
-                            {p.highlights.map((h, i2) => <li key={i2}>{h}</li>)}
-                          </ul>
-                          <button
-                            style={styles.secondaryBtn}
-                            onClick={() => { setSaleModalPlan({ fiberPlan: p }); setShowSaleModal(true); }}
-                          >
-                            <DollarSign size={14} style={{ marginRight: 6 }} /> Log this sale
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </>
-            )}
-
-            {planSubTab === 'watch' && (
-              <>
-                {WATCH_PLANS.map((p, i) => {
-                  const isOpen = expandedPlan === p.name;
-                  return (
-                    <div key={p.name} style={{ ...styles.planCard, animationDelay: `${i * 35}ms` }} className="lift rise">
-                      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8, cursor: 'pointer' }} onClick={() => setExpandedPlan(isOpen ? null : p.name)}>
-                        <div style={{ minWidth: 0 }}>
-                          <div style={{ fontWeight: 700, fontSize: 14.5 }}>{p.name}</div>
-                          <div style={{ fontSize: 12, color: 'var(--ink-soft)', marginTop: 2 }}>{p.speed}</div>
-                        </div>
-                        <div style={{ textAlign: 'right', flexShrink: 0 }}>
-                          <div style={{ fontSize: 10.5, color: 'var(--ink-faint)', textDecoration: 'line-through' }}>{fmtMoneyPlain(p.basePrice)}</div>
-                          <div className="font-display tabular" style={{ fontWeight: 800, fontSize: 15, color: 'var(--positive)' }}>{fmtMoneyPlain(watchPriceWithAutopay(p))}</div>
-                          <div style={{ fontSize: 10.5, color: 'var(--ink-faint)' }}>w/ AutoPay</div>
-                          <ChevronDown size={15} style={{ marginTop: 4, transform: isOpen ? 'rotate(180deg)' : 'none', color: 'var(--ink-faint)' }} />
-                        </div>
-                      </div>
-
-                      {isOpen && (
-                        <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid var(--border)' }}>
-                          <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--ink-faint)', textTransform: 'uppercase', marginBottom: 6 }}>Pricing</div>
-                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 12 }}>
-                            <div style={styles.tierChip}>
-                              <span style={{ fontWeight: 700 }}>{fmtMoneyPlain(p.basePrice)}</span>
-                              <span style={{ color: 'var(--ink-faint)' }}> · list price</span>
-                            </div>
-                            <div style={styles.tierChip}>
-                              <span style={{ fontWeight: 700, color: 'var(--positive)' }}>{fmtMoneyPlain(watchPriceWithAutopay(p))}</span>
-                              <span style={{ color: 'var(--ink-faint)' }}> · w/ AutoPay</span>
-                            </div>
-                          </div>
-                          <ul style={{ margin: '0 0 12px', paddingLeft: 18, fontSize: 12.5, color: 'var(--ink-soft)', lineHeight: 1.6 }}>
-                            {p.highlights.map((h, i2) => <li key={i2}>{h}</li>)}
-                          </ul>
-                          <button
-                            style={styles.secondaryBtn}
-                            onClick={() => { setSaleModalPlan({ watchPlan: p }); setShowSaleModal(true); }}
-                          >
-                            <DollarSign size={14} style={{ marginRight: 6 }} /> Log this sale
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </>
-            )}
-
-            {planSubTab === 'tablet' && (
-              <>
-                {TABLET_PLANS.map((p, i) => {
-                  const isOpen = expandedPlan === p.name;
-                  return (
-                    <div key={p.name} style={{ ...styles.planCard, animationDelay: `${i * 35}ms` }} className="lift rise">
-                      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8, cursor: 'pointer' }} onClick={() => setExpandedPlan(isOpen ? null : p.name)}>
-                        <div style={{ minWidth: 0 }}>
-                          <div style={{ fontWeight: 700, fontSize: 14.5 }}>{p.name}</div>
-                          <div style={{ fontSize: 12, color: 'var(--ink-soft)', marginTop: 2 }}>{p.speed}</div>
-                        </div>
-                        <div style={{ textAlign: 'right', flexShrink: 0 }}>
-                          <div style={{ fontSize: 10.5, color: 'var(--ink-faint)', textDecoration: 'line-through' }}>{fmtMoneyPlain(p.basePrice)}</div>
-                          <div className="font-display tabular" style={{ fontWeight: 800, fontSize: 15, color: 'var(--positive)' }}>{fmtMoneyPlain(tabletPriceWithAutopay(p))}</div>
-                          <div style={{ fontSize: 10.5, color: 'var(--ink-faint)' }}>w/ AutoPay</div>
-                          <ChevronDown size={15} style={{ marginTop: 4, transform: isOpen ? 'rotate(180deg)' : 'none', color: 'var(--ink-faint)' }} />
-                        </div>
-                      </div>
-
-                      {isOpen && (
-                        <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid var(--border)' }}>
-                          <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--ink-faint)', textTransform: 'uppercase', marginBottom: 6 }}>Pricing</div>
-                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 12 }}>
-                            <div style={styles.tierChip}>
-                              <span style={{ fontWeight: 700 }}>{fmtMoneyPlain(p.basePrice)}</span>
-                              <span style={{ color: 'var(--ink-faint)' }}> · list price</span>
-                            </div>
-                            <div style={styles.tierChip}>
-                              <span style={{ fontWeight: 700, color: 'var(--positive)' }}>{fmtMoneyPlain(tabletPriceWithAutopay(p))}</span>
-                              <span style={{ color: 'var(--ink-faint)' }}> · w/ AutoPay</span>
-                            </div>
-                          </div>
-                          <ul style={{ margin: '0 0 12px', paddingLeft: 18, fontSize: 12.5, color: 'var(--ink-soft)', lineHeight: 1.6 }}>
-                            {p.highlights.map((h, i2) => <li key={i2}>{h}</li>)}
-                          </ul>
-                          <button
-                            style={styles.secondaryBtn}
-                            onClick={() => { setSaleModalPlan({ tabletPlan: p }); setShowSaleModal(true); }}
-                          >
-                            <DollarSign size={14} style={{ marginRight: 6 }} /> Log this sale
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </>
-            )}
           </div>
         )}
 
@@ -3485,23 +3167,19 @@ export default function App() {
         )}
       </div>
 
-      {tab === 'customers' && (
-        <button className="press" style={styles.fab} onClick={() => setCustomerModal({ open: true, initial: null, id: null })}><Plus size={25} strokeWidth={2.4} /></button>
-      )}
-
       {/* bottom nav */}
-      <div style={styles.nav}>
-        <NavBtn icon={Home} label="Home" active={tab === 'dashboard'} onClick={() => setTab('dashboard')} />
-        <NavBtn icon={DollarSign} label="Sales" active={tab === 'sales'} onClick={() => setTab('sales')} />
-        <NavBtn icon={Users} label="Customers" active={tab === 'customers'} onClick={() => setTab('customers')} />
-        <div style={styles.navFabSlot}>
-          <button className="press" style={styles.navFab} onClick={() => setShowSaleModal(true)} aria-label="Log a transaction">
-            <Plus size={24} strokeWidth={2.6} color="#fff" />
-          </button>
+      <div style={styles.navWrap}>
+        <div style={styles.nav}>
+          <NavBtn icon={Home} label="Home" active={tab === 'dashboard'} onClick={() => setTab('dashboard')} />
+          <NavBtn icon={DollarSign} label="Sales" active={tab === 'sales'} onClick={() => setTab('sales')} />
+          <div style={styles.navFabSlot}>
+            <button className="press" style={styles.navFab} onClick={() => setShowSaleModal(true)} aria-label="Log a transaction">
+              <Plus size={24} strokeWidth={2.6} color="#fff" />
+            </button>
+          </div>
+          <NavBtn icon={TrendingUp} label="Goals" active={tab === 'goals'} onClick={() => setTab('goals')} />
+          <NavBtn icon={SettingsIcon} label="Settings" active={tab === 'settings'} onClick={() => { setTab('settings'); handleRatesTap(); }} />
         </div>
-        <NavBtn icon={Smartphone} label="Plans" active={tab === 'plans'} onClick={() => setTab('plans')} />
-        <NavBtn icon={TrendingUp} label="Goals" active={tab === 'goals'} onClick={() => setTab('goals')} />
-        <NavBtn icon={SettingsIcon} label="Settings" active={tab === 'settings'} onClick={() => { setTab('settings'); handleRatesTap(); }} />
       </div>
 
       {toast && <div style={styles.toast}>{toast}</div>}
@@ -3510,6 +3188,7 @@ export default function App() {
         open={showSaleModal} onClose={() => { setShowSaleModal(false); setSaleModalPlan(null); }} onSave={addCommission}
         categories={categories} initialPlan={saleModalPlan} spiffs={spiffs}
         customers={customers} onCreateCustomer={quickAddCustomer}
+        onEditCustomer={(c) => setCustomerModal({ open: true, initial: c, id: c.id })}
       />
       <CustomerModal
         open={customerModal.open}
@@ -3526,17 +3205,16 @@ export default function App() {
 
 function NavBtn({ icon: Icon, label, active, onClick }) {
   return (
-    <button onClick={onClick} style={styles.navBtn} className="press">
+    <button onClick={onClick} style={active ? styles.navBtnOn : styles.navBtn} className="press">
       <div style={styles.navIconBox}>
-        <Icon size={20} color={active ? 'var(--accent)' : 'var(--ink-faint)'} strokeWidth={active ? 2.4 : 1.9} />
+        <Icon size={20} color={active ? 'var(--ink)' : 'var(--ink-faint)'} strokeWidth={active ? 2.4 : 1.9} />
       </div>
       <span style={{
         fontSize: 10, fontWeight: active ? 700 : 600,
-        color: active ? 'var(--accent)' : 'var(--ink-faint)', marginTop: 3, letterSpacing: '-0.01em',
+        color: active ? 'var(--ink)' : 'var(--ink-faint)', marginTop: 3, letterSpacing: '-0.01em',
       }}>
         {label}
       </span>
-      <div style={{ ...styles.navDot, opacity: active ? 1 : 0, transition: 'opacity 180ms ease' }} />
     </button>
   );
 }
@@ -3874,16 +3552,6 @@ const styles = {
     color: 'var(--ink)', fontSize: 12.5, fontWeight: 700, cursor: 'pointer', boxShadow: 'var(--shadow-sm)',
     transition: 'background 180ms ease, color 180ms ease',
   },
-  pillSm: {
-    padding: '6px 13px', borderRadius: 999, border: '1px solid var(--border)', background: 'var(--surface)',
-    color: 'var(--ink-soft)', fontSize: 12, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0,
-    transition: 'all 160ms ease',
-  },
-  pillActiveSm: {
-    padding: '6px 13px', borderRadius: 999, border: '1px solid var(--accent)', background: 'var(--accent)',
-    color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0,
-    transition: 'all 160ms ease',
-  },
 
   heroCard: {
     position: 'relative', overflow: 'hidden',
@@ -3907,30 +3575,6 @@ const styles = {
     marginBottom: 4, boxShadow: 'var(--shadow-sm)',
   },
 
-  pdfScroll: {
-    flex: 1, minHeight: 380, overflow: 'auto', background: 'var(--bg)', border: '1px solid var(--border)',
-    borderRadius: 16, padding: 10, WebkitOverflowScrolling: 'touch', overscrollBehavior: 'contain',
-  },
-  pdfPreviewFrame: {
-    position: 'relative', height: 260, overflow: 'hidden', background: 'var(--bg)',
-    border: '1px solid var(--border)', borderRadius: 16, padding: '10px 10px 0',
-  },
-  pdfPreviewFade: {
-    position: 'absolute', left: 0, right: 0, bottom: 0, height: 92,
-    background: 'linear-gradient(180deg, transparent 0%, var(--bg) 88%)',
-  },
-  pdfPreviewHint: {
-    position: 'absolute', left: 12, right: 12, bottom: 10, display: 'flex', alignItems: 'center',
-    justifyContent: 'center', padding: '9px 12px', borderRadius: 999,
-    background: 'var(--solid-btn-bg)', color: 'var(--solid-btn-fg)', fontSize: 12, fontWeight: 700,
-    boxShadow: '0 6px 16px rgba(13,13,18,0.28)',
-  },
-  zoomBar: { display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 },
-  zoomBtn: {
-    width: 34, height: 34, borderRadius: 10, border: '1px solid var(--border)', background: 'var(--surface)',
-    color: 'var(--ink)', fontSize: 17, fontWeight: 700, cursor: 'pointer', display: 'flex',
-    alignItems: 'center', justifyContent: 'center', lineHeight: 1, flexShrink: 0, boxShadow: 'var(--shadow-sm)',
-  },
 
   ticker: {
     position: 'relative', overflow: 'hidden',
@@ -3942,11 +3586,6 @@ const styles = {
     position: 'absolute', top: '-60%', right: '-20%', width: '70%', height: '220%',
     background: 'radial-gradient(circle, rgba(226,0,116,0.8) 0%, rgba(226,0,116,0.15) 48%, transparent 72%)',
     filter: 'blur(6px)', animation: 'glowDrift 14s ease-in-out infinite', pointerEvents: 'none',
-  },
-  linkCustomerBtn: {
-    display: 'flex', alignItems: 'center', justifyContent: 'center', width: '100%',
-    padding: '10px 0', borderRadius: 12, border: '1px dashed var(--border)', background: 'transparent',
-    color: 'var(--ink-soft)', fontSize: 13, fontWeight: 600, cursor: 'pointer',
   },
   linkedCustomerRow: {
     display: 'flex', alignItems: 'center', gap: 9, padding: '8px 11px', borderRadius: 13,
@@ -3983,11 +3622,6 @@ const styles = {
   planGroupDot: {
     width: 6, height: 6, borderRadius: '50%', background: 'var(--accent)', flexShrink: 0,
   },
-  sectionDivider: {
-    height: 2, borderRadius: 2, marginBottom: 16,
-    background: 'linear-gradient(90deg, transparent 0%, var(--accent) 50%, transparent 100%)',
-    opacity: 0.35,
-  },
   planOption: {
     display: 'flex', alignItems: 'center', gap: 10, width: '100%', textAlign: 'left',
     background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 13,
@@ -4010,10 +3644,6 @@ const styles = {
   planCheck: {
     width: 20, height: 20, borderRadius: '50%', background: 'var(--accent)',
     display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-  },
-  checkboxRow: {
-    display: 'flex', alignItems: 'center', gap: 8, marginTop: 12,
-    fontSize: 13, fontWeight: 600, color: 'var(--ink-soft)', cursor: 'pointer',
   },
   checkboxRowWarn: {
     display: 'flex', alignItems: 'center', gap: 8, marginTop: 10,
@@ -4049,6 +3679,12 @@ const styles = {
     width: '100%', marginTop: 14, padding: '11px 0', borderRadius: 12, border: 'none',
     background: 'var(--solid-btn-bg)', color: 'var(--solid-btn-fg)', fontWeight: 700, fontSize: 13.5,
     display: 'flex', alignItems: 'center', justifyContent: 'center',
+  },
+  addCustomerBtn: {
+    display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+    width: 38, height: 38, borderRadius: 11, border: '1px solid var(--border)',
+    background: 'var(--surface)', color: 'var(--ink-soft)', cursor: 'pointer',
+    boxShadow: 'var(--shadow-sm)', transition: 'all 150ms ease',
   },
   chip: {
     padding: '9px 14px', borderRadius: 11, border: '1px solid var(--border)', background: 'var(--surface)',
@@ -4089,10 +3725,6 @@ const styles = {
     background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 16, padding: '13px 15px',
     marginBottom: 8, boxShadow: 'var(--shadow-sm)',
   },
-  planBadge: {
-    display: 'inline-flex', alignItems: 'center', background: 'var(--accent-soft)', color: 'var(--accent)',
-    fontSize: 10.5, fontWeight: 700, padding: '3px 9px', borderRadius: 999,
-  },
   goalTrack: {
     height: 8, borderRadius: 999, background: 'var(--track)', overflow: 'hidden',
   },
@@ -4102,17 +3734,6 @@ const styles = {
   promoBadge: {
     display: 'inline-flex', alignItems: 'center', background: 'var(--positive-soft)', color: 'var(--positive)',
     fontSize: 10.5, fontWeight: 700, padding: '3px 9px', borderRadius: 999,
-  },
-  promoCallout: {
-    background: 'var(--positive-soft)', border: '1px solid rgba(0,168,120,0.28)', color: 'var(--positive-ink)',
-    borderRadius: 12, padding: '11px 13px', marginBottom: 12,
-  },
-  tierChip: {
-    background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 9, padding: '6px 10px', fontSize: 12,
-  },
-  tierChipPromo: {
-    background: 'var(--positive-soft)', border: '1px solid rgba(0,168,120,0.28)', borderRadius: 9,
-    padding: '6px 10px', fontSize: 12,
   },
 
   input: {
@@ -4146,36 +3767,53 @@ const styles = {
     display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0,
   },
 
-  fab: {
-    position: 'absolute', right: 18, bottom: 88, width: 56, height: 56, borderRadius: 19,
-    background: 'linear-gradient(135deg, var(--accent-2) 0%, var(--accent) 55%, var(--accent-deep) 100%)',
-    color: '#fff', border: 'none', display: 'flex', alignItems: 'center',
-    justifyContent: 'center', boxShadow: '0 10px 26px rgba(226,0,116,0.42)', cursor: 'pointer', zIndex: 5,
-  },
   navFabSlot: {
     flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center',
   },
   navFab: {
-    width: 48, height: 48, borderRadius: '50%', flexShrink: 0,
+    width: 46, height: 46, borderRadius: '50%', flexShrink: 0,
     background: 'linear-gradient(135deg, var(--accent-2) 0%, var(--accent) 55%, var(--accent-deep) 100%)',
     border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center',
-    boxShadow: '0 6px 16px rgba(226,0,116,0.45)', cursor: 'pointer', marginTop: -8,
+    boxShadow: '0 2px 6px rgba(226,0,116,0.22)', cursor: 'pointer',
   },
 
+  navWrap: {
+    flexShrink: 0, padding: '6px 12px calc(10px + env(safe-area-inset-bottom))',
+    background: 'transparent',
+  },
   nav: {
-    display: 'flex', gap: 4, borderTop: '1px solid var(--border)', background: 'var(--nav-bg)',
-    backdropFilter: 'blur(14px)', WebkitBackdropFilter: 'blur(14px)',
-    padding: '7px 4px calc(7px + env(safe-area-inset-bottom))', flexShrink: 0,
+    display: 'flex', alignItems: 'center', gap: 2,
+    background: 'var(--nav-bg)', border: '1px solid var(--border)',
+    backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)',
+    borderRadius: 999, padding: '6px 8px',
+    boxShadow: '0 6px 22px rgba(0,0,0,0.28)',
+  },
+  segmentRow: {
+    display: 'flex', gap: 4, marginTop: 14, marginBottom: 12,
+    background: 'var(--track)', padding: 4, borderRadius: 15,
+  },
+  segment: {
+    flex: 1, padding: '9px 0', borderRadius: 11, border: 'none', background: 'transparent',
+    color: 'var(--ink-soft)', fontSize: 13.5, fontWeight: 600, cursor: 'pointer',
+    transition: 'background 180ms ease, color 180ms ease',
+  },
+  segmentOn: {
+    flex: 1, padding: '9px 0', borderRadius: 11, border: 'none', background: 'var(--surface)',
+    color: 'var(--ink)', fontSize: 13.5, fontWeight: 700, cursor: 'pointer',
+    boxShadow: 'var(--shadow-sm)', transition: 'background 180ms ease, color 180ms ease',
   },
   navIconBox: {
     width: 24, height: 20, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
   },
   navBtn: {
     flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', border: 'none',
-    background: 'none', cursor: 'pointer', padding: '5px 0 3px', position: 'relative',
+    background: 'none', cursor: 'pointer', padding: '7px 0 6px', position: 'relative',
+    borderRadius: 999, transition: 'background 200ms ease',
   },
-  navDot: {
-    width: 4, height: 4, borderRadius: '50%', background: 'var(--accent)', marginTop: 3,
+  navBtnOn: {
+    flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', border: 'none',
+    background: 'var(--track)', cursor: 'pointer', padding: '7px 0 6px', position: 'relative',
+    borderRadius: 999, transition: 'background 200ms ease',
   },
 
   sheetOverlay: {
@@ -4188,12 +3826,12 @@ const styles = {
   },
   sheetHandle: { width: 38, height: 4, borderRadius: 2, background: 'var(--border)', margin: '0 auto 14px' },
 
-  livePulse: { width: 7, height: 7, borderRadius: '50%', background: 'var(--positive)', display: 'inline-block', animation: 'pulse 1.8s ease-in-out infinite' },
   toast: {
     position: 'absolute', bottom: 96, left: '50%', transform: 'translateX(-50%)', background: 'var(--carbon)',
-    color: '#fff', padding: '10px 18px', borderRadius: 999, fontSize: 13, fontWeight: 600, zIndex: 30,
-    boxShadow: '0 8px 24px rgba(13,13,18,0.3)', whiteSpace: 'nowrap',
+    color: '#fff', padding: '10px 16px', borderRadius: 12, fontSize: 12.5, fontWeight: 600,
+    boxShadow: 'var(--shadow-md)', zIndex: 30, maxWidth: '82%', textAlign: 'center', lineHeight: 1.4,
   },
+
   deleteLink: {
     display: 'block', width: '100%', textAlign: 'center', marginTop: 10, padding: '9px 0',
     background: 'none', border: 'none', color: '#DC2626', fontSize: 13, fontWeight: 600, cursor: 'pointer',
