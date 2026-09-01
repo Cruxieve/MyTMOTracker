@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   Home, DollarSign, Users, Settings as SettingsIcon, Plus, X,
-  Search, Phone, Mail, Edit2, Trash2, Calendar, TrendingUp, LogOut,
+  Search, Phone, Mail, Edit2, Trash2, TrendingUp, LogOut,
   ChevronRight, ChevronLeft, ChevronDown, Smartphone, ShieldCheck, Upload, ExternalLink, FileText,
   Wifi, Watch, Tablet, CreditCard, Package, Zap, Gift, Check, Minus, ArrowUpCircle, UserPlus, Maximize2, Shield
 } from 'lucide-react';
@@ -1873,6 +1873,8 @@ export default function App() {
   const [customers, setCustomers] = useState([]);
   const [tab, setTab] = useState('dashboard');
   const [statPeriod, setStatPeriod] = useState('month');
+  const [chartPage, setChartPage] = useState(0);
+  const chartScrollRef = React.useRef(null);
   const [saleMonth, setSaleMonth] = useState(() => new Date().toISOString().slice(0, 7));
   const [saleDay, setSaleDay] = useState(''); // '' = whole month
   const [goalMonth, setGoalMonth] = useState(() => new Date().toISOString().slice(0, 7));
@@ -2571,104 +2573,149 @@ export default function App() {
               ))}
             </div>
 
-            <div style={styles.card} className="rise">
-              <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 12 }}>
-                <TrendingUp size={15} color="var(--accent)" />
-                <div className="font-display" style={{ fontWeight: 800, fontSize: 13.5 }}>Last 7 days</div>
+            {/* charts carousel — swipe between the two views */}
+            <div
+              ref={chartScrollRef}
+              onScroll={(e) => {
+                const el = e.currentTarget;
+                const page = Math.round(el.scrollLeft / el.clientWidth);
+                if (page !== chartPage) setChartPage(page);
+              }}
+              style={styles.chartCarousel}
+            >
+              <div style={styles.chartSlide}>
+                <div style={{ ...styles.card, height: '100%' }} className="rise">
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 12 }}>
+                    <TrendingUp size={15} color="var(--accent)" />
+                    <div className="font-display" style={{ fontWeight: 800, fontSize: 13.5 }}>Last 7 days</div>
+                  </div>
+                  <div style={{ height: 130 }}>
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={last7} margin={{ top: 4, right: 0, left: 0, bottom: 0 }}>
+                        <defs>
+                          <linearGradient id="barGrad" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="0%" stopColor="var(--accent-2)" />
+                            <stop offset="100%" stopColor="var(--accent)" />
+                          </linearGradient>
+                        </defs>
+                        <CartesianGrid vertical={false} stroke="var(--border)" />
+                        <XAxis dataKey="label" tickLine={false} axisLine={false} tick={{ fontSize: 11, fill: 'var(--ink-faint)' }} />
+                        <Tooltip
+                          cursor={{ fill: 'rgba(226,0,116,0.06)' }}
+                          formatter={(v) => fmtMoney(v)}
+                          contentStyle={{
+                            borderRadius: 12, border: '1px solid var(--border)', fontSize: 12,
+                            boxShadow: 'var(--shadow-md)', background: 'var(--surface)', color: 'var(--ink)',
+                          }}
+                          labelStyle={{ color: 'var(--ink)', fontWeight: 700, marginBottom: 2 }}
+                          itemStyle={{ color: 'var(--ink)' }}
+                        />
+                        <Bar dataKey="total" fill="url(#barGrad)" radius={[6, 6, 0, 0]} animationDuration={620} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
               </div>
-              <div style={{ height: 110 }}>
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={last7} margin={{ top: 4, right: 0, left: 0, bottom: 0 }}>
-                    <defs>
-                      <linearGradient id="barGrad" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="0%" stopColor="var(--accent-2)" />
-                        <stop offset="100%" stopColor="var(--accent)" />
-                      </linearGradient>
-                    </defs>
-                    <CartesianGrid vertical={false} stroke="var(--border)" />
-                    <XAxis dataKey="label" tickLine={false} axisLine={false} tick={{ fontSize: 11, fill: 'var(--ink-faint)' }} />
-                    <Tooltip
-                      cursor={{ fill: 'rgba(226,0,116,0.06)' }}
-                      formatter={(v) => fmtMoney(v)}
-                      contentStyle={{
-                        borderRadius: 12, border: '1px solid var(--border)', fontSize: 12,
-                        boxShadow: 'var(--shadow-md)', background: 'var(--surface)', color: 'var(--ink)',
-                      }}
-                      labelStyle={{ color: 'var(--ink)', fontWeight: 700, marginBottom: 2 }}
-                      itemStyle={{ color: 'var(--ink)' }}
-                    />
-                    <Bar dataKey="total" fill="url(#barGrad)" radius={[6, 6, 0, 0]} animationDuration={620} />
-                  </BarChart>
-                </ResponsiveContainer>
+
+              <div style={styles.chartSlide}>
+                <div style={{ ...styles.card, height: '100%' }} className="rise">
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 10 }}>
+                    <TrendingUp size={15} color="var(--accent)" />
+                    <div className="font-display" style={{ fontWeight: 800, fontSize: 13.5 }}>This month's pace</div>
+                  </div>
+
+                  <div style={{ display: 'flex', alignItems: 'flex-end', gap: 20, marginBottom: 10 }}>
+                    <div>
+                      <div style={{ fontSize: 10, color: 'var(--ink-faint)', fontWeight: 700, letterSpacing: '0.05em', marginBottom: 1 }}>SO FAR</div>
+                      <div className="font-display tabular" style={{ fontSize: 18, fontWeight: 800, color: 'var(--money)', letterSpacing: '0.01em' }}>
+                        {fmtMoney(monthTrend.mtd)}
+                      </div>
+                    </div>
+                    <div>
+                      <div style={{ fontSize: 10, color: 'var(--ink-faint)', fontWeight: 700, letterSpacing: '0.05em', marginBottom: 1 }}>ON PACE FOR</div>
+                      <div className="font-display tabular" style={{ fontSize: 18, fontWeight: 800, color: 'var(--accent)', letterSpacing: '0.01em' }}>
+                        {fmtMoney(monthTrend.projected)}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div style={{ height: 92 }}>
+                    <ResponsiveContainer width="100%" height="100%">
+                      <AreaChart data={monthTrend.rows} margin={{ top: 4, right: 4, left: 0, bottom: 0 }}>
+                        <defs>
+                          <linearGradient id="trendGrad" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="0%" stopColor="var(--accent)" stopOpacity={0.35} />
+                            <stop offset="100%" stopColor="var(--accent)" stopOpacity={0.02} />
+                          </linearGradient>
+                        </defs>
+                        <CartesianGrid vertical={false} stroke="var(--border)" />
+                        <XAxis
+                          dataKey="label" tickLine={false} axisLine={false}
+                          interval="preserveStartEnd" minTickGap={24}
+                          tick={{ fontSize: 10.5, fill: 'var(--ink-faint)' }}
+                        />
+                        <YAxis
+                          tickLine={false} axisLine={false} width={40}
+                          tick={{ fontSize: 10, fill: 'var(--ink-faint)' }}
+                          tickFormatter={(v) => `$${v >= 1000 ? `${Math.round(v / 100) / 10}k` : Math.round(v)}`}
+                        />
+                        <Tooltip
+                          formatter={(v) => fmtMoney(v)}
+                          labelFormatter={(l) => `Day ${l}`}
+                          contentStyle={{
+                            borderRadius: 12, border: '1px solid var(--border)', fontSize: 12,
+                            boxShadow: 'var(--shadow-md)', background: 'var(--surface)', color: 'var(--ink)',
+                          }}
+                          labelStyle={{ color: 'var(--ink)', fontWeight: 700, marginBottom: 2 }}
+                          itemStyle={{ color: 'var(--ink)' }}
+                        />
+                        <Area
+                          type="monotone" dataKey="earned" stroke="var(--accent)" strokeWidth={2.4}
+                          fill="url(#trendGrad)" connectNulls={false}
+                          dot={false} activeDot={{ r: 4, fill: 'var(--accent)' }}
+                          animationDuration={620}
+                        />
+                      </AreaChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
               </div>
             </div>
 
-            <div style={{ ...styles.card, marginTop: 10 }} className="rise">
-              <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 12 }}>
-                <TrendingUp size={15} color="var(--accent)" />
-                <div className="font-display" style={{ fontWeight: 800, fontSize: 13.5 }}>This month's pace</div>
-              </div>
-
-              <div style={{ display: 'flex', alignItems: 'flex-end', gap: 20, marginBottom: 14 }}>
-                <div>
-                  <div style={{ fontSize: 10.5, color: 'var(--ink-faint)', fontWeight: 700, letterSpacing: '0.05em', marginBottom: 2 }}>SO FAR</div>
-                  <div className="font-display tabular" style={{ fontSize: 20, fontWeight: 800, color: 'var(--money)', letterSpacing: '0.01em' }}>
-                    {fmtMoney(monthTrend.mtd)}
-                  </div>
-                </div>
-                <div>
-                  <div style={{ fontSize: 10.5, color: 'var(--ink-faint)', fontWeight: 700, letterSpacing: '0.05em', marginBottom: 2 }}>ON PACE FOR</div>
-                  <div className="font-display tabular" style={{ fontSize: 20, fontWeight: 800, color: 'var(--accent)', letterSpacing: '0.01em' }}>
-                    {fmtMoney(monthTrend.projected)}
-                  </div>
-                </div>
-              </div>
-
-              <div style={{ height: 130 }}>
-                <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart data={monthTrend.rows} margin={{ top: 4, right: 4, left: 0, bottom: 0 }}>
-                    <defs>
-                      <linearGradient id="trendGrad" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="0%" stopColor="var(--accent)" stopOpacity={0.35} />
-                        <stop offset="100%" stopColor="var(--accent)" stopOpacity={0.02} />
-                      </linearGradient>
-                    </defs>
-                    <CartesianGrid vertical={false} stroke="var(--border)" />
-                    <XAxis
-                      dataKey="label" tickLine={false} axisLine={false}
-                      interval="preserveStartEnd" minTickGap={24}
-                      tick={{ fontSize: 10.5, fill: 'var(--ink-faint)' }}
-                    />
-                    <YAxis
-                      tickLine={false} axisLine={false} width={44}
-                      tick={{ fontSize: 10.5, fill: 'var(--ink-faint)' }}
-                      tickFormatter={(v) => `$${v >= 1000 ? `${Math.round(v / 100) / 10}k` : Math.round(v)}`}
-                    />
-                    <Tooltip
-                      formatter={(v) => fmtMoney(v)}
-                      labelFormatter={(l) => `Day ${l}`}
-                      contentStyle={{
-                        borderRadius: 12, border: '1px solid var(--border)', fontSize: 12,
-                        boxShadow: 'var(--shadow-md)', background: 'var(--surface)', color: 'var(--ink)',
-                      }}
-                      labelStyle={{ color: 'var(--ink)', fontWeight: 700, marginBottom: 2 }}
-                      itemStyle={{ color: 'var(--ink)' }}
-                    />
-                    <Area
-                      type="monotone" dataKey="earned" stroke="var(--accent)" strokeWidth={2.4}
-                      fill="url(#trendGrad)" connectNulls={false}
-                      dot={false} activeDot={{ r: 4, fill: 'var(--accent)' }}
-                      animationDuration={620}
-                    />
-                  </AreaChart>
-                </ResponsiveContainer>
-              </div>
+            <div style={{ display: 'flex', justifyContent: 'center', gap: 6, marginTop: 10 }}>
+              {[0, 1].map(i => (
+                <button
+                  key={i}
+                  onClick={() => {
+                    const el = chartScrollRef.current;
+                    if (el) el.scrollTo({ left: i * el.clientWidth, behavior: 'smooth' });
+                  }}
+                  style={{
+                    width: chartPage === i ? 18 : 6, height: 6, borderRadius: 3, padding: 0,
+                    border: 'none', cursor: 'pointer',
+                    background: chartPage === i ? 'var(--accent)' : 'var(--border)',
+                    transition: 'width 220ms ease, background 220ms ease',
+                  }}
+                  aria-label={`Chart ${i + 1}`}
+                />
+              ))}
             </div>
           </div>
         )}
 
         {tab === 'sales' && (
           <div>
+            <input
+              type="date" value={saleDay || monthDayBounds.min}
+              onChange={e => {
+                const v = e.target.value;
+                if (!v) return;
+                setSaleMonth(v.slice(0, 7));
+                setSaleDay(v);
+              }}
+              style={{ ...styles.input, borderRadius: 15, marginTop: 14 }}
+            />
+
             <div style={styles.segmentRow}>
               <button
                 onClick={() => setSalesSubTab('sales')}
@@ -2686,22 +2733,13 @@ export default function App() {
 
             {salesSubTab === 'sales' ? (
               <>
-                <input
-                  type="date" value={saleDay || monthDayBounds.min}
-                  onChange={e => {
-                    const v = e.target.value;
-                    if (!v) return;
-                    setSaleMonth(v.slice(0, 7));
-                    setSaleDay(v);
-                  }}
-                  style={{ ...styles.input, borderRadius: 15, marginBottom: 8 }}
-                />
-
-                <div style={{ ...styles.card, borderRadius: 15, padding: '11px 13px', marginBottom: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }} className="rise">
-                  <div style={{ fontSize: 12, color: 'var(--ink-soft)', fontWeight: 600 }}>
-                    {shownSales.length} transaction{shownSales.length === 1 ? '' : 's'}
-                  </div>
-                  <div className="font-display tabular" style={{ fontSize: 20, fontWeight: 800, color: 'var(--money)' }}>{fmtMoney(shownTotal)}</div>
+                <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', padding: '0 3px', marginBottom: 10 }}>
+                  <span style={{ fontSize: 11.5, color: 'var(--ink-faint)', fontWeight: 600 }}>
+                    {shownSales.length} sale{shownSales.length === 1 ? '' : 's'}
+                  </span>
+                  <span className="font-display tabular" style={{ fontSize: 17, fontWeight: 800, color: 'var(--money)' }}>
+                    {fmtMoney(shownTotal)}
+                  </span>
                 </div>
 
                 {shownSales.length === 0 ? (
@@ -3476,20 +3514,14 @@ function SaleRow({ sale, customers, onDelete }) {
 
         {expanded && (
           <div style={{ marginTop: 9, paddingTop: 9, borderTop: '1px solid var(--border)' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
-              <Calendar size={12} color="var(--ink-faint)" style={{ flexShrink: 0 }} />
-              <span style={{ fontSize: 11.5, color: 'var(--ink-soft)', fontWeight: 600 }}>
-                {fmtDateNice(sale.date)}
-              </span>
-              {customer && (
-                <>
-                  <span style={{ color: 'var(--ink-faint)', fontSize: 11 }}>·</span>
-                  <span style={{ fontSize: 11.5, color: 'var(--ink-soft)', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {customer.name}
-                  </span>
-                </>
-              )}
-            </div>
+            {customer && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
+                <Avatar name={customer.name} size={18} />
+                <span style={{ fontSize: 11.5, color: 'var(--ink-soft)', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {customer.name}
+                </span>
+              </div>
+            )}
 
             {items.map((it, i) => {
               const Icon = categoryIcon(it.category);
@@ -3668,11 +3700,11 @@ button { color: inherit; -webkit-appearance: none; appearance: none; -webkit-tap
   background-color: #0B0B10 !important;
   background-image:
     radial-gradient(circle farthest-side at 0% 50%, #0B0B10 23.5%, rgba(11,11,16,0) 0) 21px 30px,
-    radial-gradient(circle farthest-side at 0% 50%, #1E1E2A 24%, rgba(30,30,42,0) 0) 19px 30px,
+    radial-gradient(circle farthest-side at 0% 50%, #2A2A3A 24%, rgba(42,42,58,0) 0) 19px 30px,
     linear-gradient(#0B0B10 14%, rgba(11,11,16,0) 0, rgba(11,11,16,0) 85%, #0B0B10 0) 0 0,
-    linear-gradient(150deg, #0B0B10 24%, #1E1E2A 0, #1E1E2A 26%, rgba(11,11,16,0) 0, rgba(11,11,16,0) 74%, #1E1E2A 0, #1E1E2A 76%, #0B0B10 0) 0 0,
-    linear-gradient(30deg, #0B0B10 24%, #1E1E2A 0, #1E1E2A 26%, rgba(11,11,16,0) 0, rgba(11,11,16,0) 74%, #1E1E2A 0, #1E1E2A 76%, #0B0B10 0) 0 0,
-    linear-gradient(90deg, #1E1E2A 2%, #0B0B10 0, #0B0B10 98%, #1E1E2A 0) 0 0 !important;
+    linear-gradient(150deg, #0B0B10 24%, #2A2A3A 0, #2A2A3A 26%, rgba(11,11,16,0) 0, rgba(11,11,16,0) 74%, #2A2A3A 0, #2A2A3A 76%, #0B0B10 0) 0 0,
+    linear-gradient(30deg, #0B0B10 24%, #2A2A3A 0, #2A2A3A 26%, rgba(11,11,16,0) 0, rgba(11,11,16,0) 74%, #2A2A3A 0, #2A2A3A 76%, #0B0B10 0) 0 0,
+    linear-gradient(90deg, #2A2A3A 2%, #0B0B10 0, #0B0B10 98%, #2A2A3A 0) 0 0 !important;
   background-size: 40px 60px !important;
   background-attachment: scroll !important;
 }
@@ -3685,11 +3717,11 @@ button { color: inherit; -webkit-appearance: none; appearance: none; -webkit-tap
   background-color: #E6E6EE !important;
   background-image:
     radial-gradient(circle farthest-side at 0% 50%, #E6E6EE 23.5%, rgba(230,230,238,0) 0) 21px 30px,
-    radial-gradient(circle farthest-side at 0% 50%, #D4D4E0 24%, rgba(212,212,224,0) 0) 19px 30px,
+    radial-gradient(circle farthest-side at 0% 50%, #C6C6D6 24%, rgba(198,198,214,0) 0) 19px 30px,
     linear-gradient(#E6E6EE 14%, rgba(230,230,238,0) 0, rgba(230,230,238,0) 85%, #E6E6EE 0) 0 0,
-    linear-gradient(150deg, #E6E6EE 24%, #D4D4E0 0, #D4D4E0 26%, rgba(230,230,238,0) 0, rgba(230,230,238,0) 74%, #D4D4E0 0, #D4D4E0 76%, #E6E6EE 0) 0 0,
-    linear-gradient(30deg, #E6E6EE 24%, #D4D4E0 0, #D4D4E0 26%, rgba(230,230,238,0) 0, rgba(230,230,238,0) 74%, #D4D4E0 0, #D4D4E0 76%, #E6E6EE 0) 0 0,
-    linear-gradient(90deg, #D4D4E0 2%, #E6E6EE 0, #E6E6EE 98%, #D4D4E0 0) 0 0 !important;
+    linear-gradient(150deg, #E6E6EE 24%, #C6C6D6 0, #C6C6D6 26%, rgba(230,230,238,0) 0, rgba(230,230,238,0) 74%, #C6C6D6 0, #C6C6D6 76%, #E6E6EE 0) 0 0,
+    linear-gradient(30deg, #E6E6EE 24%, #C6C6D6 0, #C6C6D6 26%, rgba(230,230,238,0) 0, rgba(230,230,238,0) 74%, #C6C6D6 0, #C6C6D6 76%, #E6E6EE 0) 0 0,
+    linear-gradient(90deg, #C6C6D6 2%, #E6E6EE 0, #E6E6EE 98%, #C6C6D6 0) 0 0 !important;
   background-size: 40px 60px !important;
   background-attachment: scroll !important;
 }
@@ -4009,8 +4041,16 @@ const styles = {
     borderRadius: 999, padding: '6px 8px',
     boxShadow: '0 6px 22px rgba(0,0,0,0.28)',
   },
+  chartCarousel: {
+    display: 'flex', overflowX: 'auto', overflowY: 'hidden',
+    scrollSnapType: 'x mandatory', WebkitOverflowScrolling: 'touch',
+    alignItems: 'stretch',
+  },
+  chartSlide: {
+    flex: '0 0 100%', width: '100%', scrollSnapAlign: 'start', minWidth: 0,
+  },
   segmentRow: {
-    display: 'flex', gap: 4, marginTop: 14, marginBottom: 12,
+    display: 'flex', gap: 4, marginTop: 8, marginBottom: 8,
     background: 'var(--track)', padding: 4, borderRadius: 15,
   },
   segment: {
