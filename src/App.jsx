@@ -273,38 +273,24 @@ function itemsOf(entry) {
 // A goal is its own named metric (e.g. "Consumer Voice") that can pull from several
 // categories at once — a Postpaid line, a Voice Line, and a Prepaid Plan sold in the
 // same transaction can all count toward the same goal total.
-// A transaction "wins" for a BYOD line if it contains something that actually
-// counts toward the goal being measured — BYOD Protection for an attach-rate
-// goal, an Essential accessory for a revenue goal, etc. Accessory items only
-// count as a win if flagged Essential, same rule as everywhere else.
-function transactionHasWin(items, winCategories) {
-  const set = new Set(winCategories || []);
-  return items.some(it => {
-    if (!set.has(it.category)) return false;
-    if (it.category === 'Accessories' && !it.isEssential) return false;
-    return true;
-  });
-}
-
 function unitsSoldForGoal(commissions, categoryNames, monthKey, opts) {
   const names = categoryNames || [];
   const plainSet = new Set(names.filter(n => !VIRTUAL_GOAL_TAGS[n]));
   const virtualMatchers = names.filter(n => VIRTUAL_GOAL_TAGS[n]).map(n => VIRTUAL_GOAL_TAGS[n].match);
   const excludeNoOpportunity = opts && opts.excludeNoOpportunity;
-  const winCategories = (opts && opts.winCategories) || [];
   let total = 0;
   for (const c of commissions) {
     if ((c.date || '').slice(0, 7) !== monthKey) continue;
     const items = itemsOf(c);
-    // A BYOD line can't take Protection 360, and doesn't come with a new
-    // device to case up — it's only a real opportunity if something that
-    // actually counts toward this goal was attached in the same transaction.
-    const hasWin = transactionHasWin(items, winCategories);
     for (const it of items) {
       if (it.category === 'Visa' && !it.isPriority) continue; // every Visa gets paid, but only priority customers count toward the goal
       if (excludeNoOpportunity) {
-        if (it.alreadyProtected) continue; // upgrade — line already protected
-        if (it.category === 'Voice Line' && it.isBYOD && !hasWin) continue; // BYOD, nothing attached
+        if (it.alreadyProtected) continue; // upgrade — line already protected, not an opportunity
+        // A BYOD line is never an attach opportunity: it can't take Protection
+        // 360 and brings no new device. BYOD Protection still counts on the
+        // "attached" side, so selling one lifts the rate without adding to the
+        // denominator — a few of them can carry the whole percentage.
+        if (it.category === 'Voice Line' && it.isBYOD) continue;
       }
       if (plainSet.has(it.category) || virtualMatchers.some(fn => fn(it))) {
         total += Number(it.qty) || 1;
@@ -345,7 +331,7 @@ function revenueForGoal(commissions, categoryNames, monthKey) {
 function computeGoalProgress(g, commissions, monthKey) {
   const target = Number(g.target) || 0;
   if (g.goalType === 'percent') {
-    const opts = { excludeNoOpportunity: true, winCategories: goalCategoryNames(g) };
+    const opts = { excludeNoOpportunity: true };
     const numerator = unitsSoldForGoal(commissions, goalCategoryNames(g), monthKey, opts);
     const denominator = unitsSoldForGoal(commissions, g.baseCategoryNames || [], monthKey, opts);
     const achieved = denominator > 0 ? Math.round((numerator / denominator) * 1000) / 10 : 0;
@@ -355,7 +341,7 @@ function computeGoalProgress(g, commissions, monthKey) {
   }
   if (g.goalType === 'revenuePerUnit') {
     const revenue = revenueForGoal(commissions, goalCategoryNames(g), monthKey);
-    const opts = { excludeNoOpportunity: true, winCategories: goalCategoryNames(g) };
+    const opts = { excludeNoOpportunity: true };
     const units = unitsSoldForGoal(commissions, g.baseCategoryNames || [], monthKey, opts);
     const achieved = units > 0 ? Math.round((revenue / units) * 100) / 100 : 0;
     const pct = target > 0 ? Math.min(100, Math.round((achieved / target) * 100)) : 0;
@@ -608,6 +594,14 @@ function planFamilyOf(planName) {
 function isPremiumPlanName(planName) {
   const fam = planFamilyOf(planName);
   return fam ? PREMIUM_PLAN_FAMILIES.has(fam) : false;
+}
+
+// Feature revenue paid per line on top of the rate plan commission. Only the
+// two premium families carry it — Essentials and Essentials Saver pay none.
+const FEATURE_REVENUE_PER_LINE = { Beyond: 15, More: 10 };
+function featureRevenueFor(planName, lines) {
+  const rate = FEATURE_REVENUE_PER_LINE[planFamilyOf(planName)] || 0;
+  return rate * (Number(lines) || 1);
 }
 
 // Goals can target these instead of (or alongside) raw categories, since
@@ -1101,7 +1095,10 @@ function SaleModal({ open, onClose, onSave, categories, initialPlan, spiffs, cus
   const selectedFiber = FIBER_PLANS.find(p => p.name === draft.planName) || null;
   const selectedWatch = WATCH_PLANS.find(p => p.name === draft.planName) || null;
   const selectedTablet = TABLET_PLANS.find(p => p.name === draft.planName) || null;
-  const draftAmount = computeCommission(draftCat, draft);
+  const draftBaseCommission = computeCommission(draftCat, draft);
+  // Beyond/More pay feature revenue per line on top of the rate plan commission.
+  const draftFeatureRevenue = isPlanCategory ? featureRevenueFor(draft.planName, draft.lines) : 0;
+  const draftAmount = draftBaseCommission + draftFeatureRevenue;
   const activeDraftSpiffs = activeSpiffsFor(spiffs, draft.category, draft.planName);
   const draftSpiffPerUnit = spiffTotalFor(spiffs, draft.category, draft.planName);
   const draftSpiffTotal = draftSpiffPerUnit * effectiveUnits(draftCat, draft);
@@ -1149,6 +1146,10 @@ function SaleModal({ open, onClose, onSave, categories, initialPlan, spiffs, cus
     if (draftCat.calcType === 'percentMRC' || draftCat.calcType === 'percentPrice') item.baseValue = Number(draft.baseValue) || 0;
     if (!draftCat.noQty && (draftCat.calcType === 'flat' || draftCat.hasQty)) item.qty = Number(draft.qty) || 1;
     if ((isPlanCategory || isHomeInternetCategory || isFiberCategory || isWatchCategory || isTabletCategory) && draft.planName) item.planName = draft.planName;
+    if (isPlanCategory) {
+      item.lines = Number(draft.lines) || 1;
+      if (draftFeatureRevenue > 0) item.featureRevenue = Math.round(draftFeatureRevenue * 100) / 100;
+    }
     if (draft.category === 'Upgrade' && draft.alreadyProtected) item.alreadyProtected = true;
     if (draft.category === 'Voice Line' && draft.isBYOD) item.isBYOD = true;
     if (draft.category === 'Accessories' && draft.isEssential) item.isEssential = true;
@@ -1179,7 +1180,7 @@ function SaleModal({ open, onClose, onSave, categories, initialPlan, spiffs, cus
           baseValue: it.baseValue,
           qty: nextQty,
           manualAmount: it.baseAmount ?? it.amount,
-        });
+        }) + (Number(it.featureRevenue) || 0); // feature revenue is per-line, not per-qty
         const spiffPerUnit = spiffTotalFor(spiffs, it.category, it.planName);
         const units = effectiveUnits(cat, { qty: nextQty });
         const spiffAmount = spiffPerUnit * units;
@@ -1931,7 +1932,7 @@ export default function App() {
   const [newPin, setNewPin] = useState('');
   const rateTapCountRef = React.useRef(0);
   const rateTapTimerRef = React.useRef(null);
-  const RATE_TAP_TARGET = 7;
+  const RATE_TAP_TARGET = 5;
 
   function handleRatesTap() {
     if (showRates) return; // already unlocked this session
@@ -2748,14 +2749,16 @@ export default function App() {
 
             {salesSubTab === 'sales' ? (
               <>
-                <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 10 }}>
-                  <span style={{ fontSize: 11.5, color: 'var(--ink-faint)', fontWeight: 600 }}>
-                    {shownSales.length} sale{shownSales.length === 1 ? '' : 's'}
-                  </span>
-                  <span className="font-display tabular" style={{ fontSize: 17, fontWeight: 800, color: 'var(--money)' }}>
-                    {fmtMoney(shownTotal)}
-                  </span>
-                </div>
+                {shownSales.length > 0 && (
+                  <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 10 }}>
+                    <span style={{ fontSize: 11.5, color: 'var(--ink-faint)', fontWeight: 600 }}>
+                      {shownSales.length} sale{shownSales.length === 1 ? '' : 's'}
+                    </span>
+                    <span className="font-display tabular" style={{ fontSize: 17, fontWeight: 800, color: 'var(--money)' }}>
+                      {fmtMoney(shownTotal)}
+                    </span>
+                  </div>
+                )}
 
                 {shownSales.length === 0 ? (
                   <EmptyState icon={DollarSign} title="No Sales" />
@@ -2818,7 +2821,7 @@ export default function App() {
             />
 
             {(() => {
-              const { list: goalList, sourceMonth } = goalsForMonth(goals, goalMonth, employmentType);
+              const { list: goalList } = goalsForMonth(goals, goalMonth, employmentType);
               if (!goalList.length) {
                 return (
                   <EmptyState
@@ -2835,12 +2838,6 @@ export default function App() {
               const fmtVal = (r, n) => (r.isRevenuePerUnit ? fmtMoneyPlain(n) : `${n}${r.isPercent ? '%' : ''}`);
               return (
                 <>
-                  {sourceMonth && sourceMonth !== goalMonth && (
-                    <div style={{ fontSize: 11.5, color: 'var(--ink-faint)', marginBottom: 12, lineHeight: 1.5 }}>
-                      Nothing posted for {monthLabel(goalMonth)} yet — showing {monthLabel(sourceMonth)}'s goals.
-                    </div>
-                  )}
-
                   {rows.map((r, i) => (
                     <div key={r.id} style={{ ...styles.planCard, animationDelay: `${Math.min(i, 8) * 35}ms` }} className="lift rise">
                       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8, marginBottom: 10 }}>
@@ -3184,12 +3181,12 @@ export default function App() {
                       )}
                       {newGoal.goalType === 'percent' && newGoal.baseCategoryNames.includes('Voice Line') && (
                         <div style={{ fontSize: 11.5, color: 'var(--ink-faint)', margin: '-4px 2px 8px', lineHeight: 1.4 }}>
-                          A BYOD Voice Line only counts here if BYOD Protection was attached — Protection 360 isn't an option on BYOD.
+                          BYOD Voice Lines never count here. BYOD Protection still counts as attached, so it lifts the rate without adding an opportunity.
                         </div>
                       )}
                       {newGoal.goalType === 'revenuePerUnit' && newGoal.baseCategoryNames.includes('Voice Line') && (
                         <div style={{ fontSize: 11.5, color: 'var(--ink-faint)', margin: '-4px 2px 8px', lineHeight: 1.4 }}>
-                          A BYOD Voice Line only counts here if something in "Revenue source" was actually sold on it — it never counts against you empty.
+                          BYOD Voice Lines never count here, so they can't drag this rate down.
                         </div>
                       )}
                       {newGoal.goalType === 'percent' &&
@@ -3355,7 +3352,7 @@ export default function App() {
                 <div style={styles.adminSectionLabel}><Shield size={13} />Passcode</div>
                 <div style={styles.card}>
                   <div style={{ fontSize: 12.5, color: 'var(--ink-soft)', marginBottom: 12, lineHeight: 1.5 }}>
-                    Six digits, required after the seven taps. Stays on this device.
+                    Six digits, required after the five taps. Stays on this device.
                   </div>
                   <input
                     type="tel" inputMode="numeric" maxLength={6}
@@ -3503,12 +3500,14 @@ function SaleRow({ sale, customers, onDelete }) {
     const qty = Number(it.qty) || 1;
     const parts = [];
     if (it.planName) parts.push(it.planName);
+    if (it.lines > 1) parts.push(`${it.lines} lines`);
     if (qty > 1) parts.push(`Qty ${qty}`);
     if (it.alreadyProtected) parts.push('Already protected');
     if (it.isBYOD) parts.push('BYOD');
     if (it.isEssential) parts.push('Essential');
     if (it.isPriority) parts.push('Priority');
     if (it.isBTS) parts.push('BTS');
+    if (it.featureRevenue > 0) parts.push(`+${fmtMoneyPlain(it.featureRevenue)} feature rev`);
     if (it.spiffAmount > 0) parts.push(`+${fmtMoneyPlain(it.spiffAmount)} SPIFF`);
     return parts.join(' \u00b7 ');
   }
@@ -3645,7 +3644,7 @@ const GLOBAL_CSS = `
   --shadow-sm: 0 1px 3px rgba(15,15,20,0.10), 0 1px 2px rgba(15,15,20,0.05);
   --shadow-md: 0 6px 18px rgba(15,15,20,0.13);
   --money: #0F0F14;
-  --shadow-glow: 0 10px 30px rgba(226,0,116,0.28);
+  --shadow-glow: 0 2px 6px rgba(226,0,116,0.22);
   color-scheme: light;
 }
 
@@ -3676,7 +3675,7 @@ const GLOBAL_CSS = `
   --shadow-sm: 0 2px 6px rgba(0,0,0,0.6);
   --shadow-md: 0 6px 20px rgba(0,0,0,0.65);
   --money: #F7F7FA;
-  --shadow-glow: 0 10px 30px rgba(255,45,158,0.28);
+  --shadow-glow: 0 2px 6px rgba(255,45,158,0.22);
   color-scheme: dark;
 }
 
@@ -3946,7 +3945,7 @@ const styles = {
     fontSize: 13, fontWeight: 800, cursor: 'pointer', color: '#fff',
     background: 'linear-gradient(135deg, var(--accent-2) 0%, var(--accent) 60%, var(--accent-deep) 100%)',
     border: '1.5px solid transparent', borderRadius: 13, padding: '10px 12px',
-    boxShadow: '0 3px 12px rgba(226,0,116,0.32)',
+    boxShadow: '0 2px 6px rgba(226,0,116,0.22)',
     transition: 'all 180ms ease',
   },
   flagMarkOff: {
@@ -4001,7 +4000,7 @@ const styles = {
   chipOn: {
     padding: '9px 14px', borderRadius: 11, border: '1px solid var(--accent)', background: 'var(--accent)',
     color: '#fff', fontSize: 13, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap',
-    boxShadow: '0 4px 12px rgba(226,0,116,0.28)', transition: 'all 150ms ease',
+    boxShadow: '0 2px 6px rgba(226,0,116,0.22)', transition: 'all 150ms ease',
   },
   catGrid: {
     display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8,
@@ -4017,7 +4016,7 @@ const styles = {
     minHeight: 74, padding: '10px 6px', borderRadius: 15, cursor: 'pointer',
     border: '1px solid var(--accent)', color: '#fff',
     background: 'linear-gradient(140deg, var(--accent-2) 0%, var(--accent) 60%, var(--accent-deep) 100%)',
-    boxShadow: '0 6px 16px rgba(226,0,116,0.32)', transition: 'all 150ms ease',
+    boxShadow: '0 2px 6px rgba(226,0,116,0.22)', transition: 'all 150ms ease',
   },
 
   saleRow: {
