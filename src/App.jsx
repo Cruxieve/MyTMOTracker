@@ -1249,7 +1249,7 @@ function SaleModal({ open, onClose, onSave, categories, initialPlan, spiffs, cus
         <button className="press" style={form.date === yest ? styles.chipOn : styles.chip} onClick={() => setForm({ ...form, date: yest })}>Yesterday</button>
         <input
           type="date" value={form.date} onChange={e => setForm({ ...form, date: e.target.value })}
-          style={{ ...styles.input, flex: 1, padding: '9px 11px', fontSize: 13 }}
+          style={{ ...styles.input, flex: 1 }}
         />
       </div>
 
@@ -2728,7 +2728,7 @@ export default function App() {
                 setSaleMonth(v.slice(0, 7));
                 setSaleDay(v);
               }}
-              style={{ ...styles.input, borderRadius: 15, marginTop: 14 }}
+              style={{ ...styles.input, marginTop: 14 }}
             />
 
             <div style={styles.segmentRow}>
@@ -2748,7 +2748,7 @@ export default function App() {
 
             {salesSubTab === 'sales' ? (
               <>
-                <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', padding: '0 3px', marginBottom: 10 }}>
+                <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 10 }}>
                   <span style={{ fontSize: 11.5, color: 'var(--ink-faint)', fontWeight: 600 }}>
                     {shownSales.length} sale{shownSales.length === 1 ? '' : 's'}
                   </span>
@@ -2773,7 +2773,7 @@ export default function App() {
                   <Search size={16} style={{ position: 'absolute', left: 12, top: 12, color: 'var(--ink-faint)' }} />
                   <input
                     value={customerSearch} onChange={e => setCustomerSearch(e.target.value)}
-                    placeholder="Search customers" style={{ ...styles.input, borderRadius: 15, paddingLeft: 34 }}
+                    placeholder="Search customers" style={{ ...styles.input, paddingLeft: 34 }}
                   />
                 </div>
                 {visibleCustomers.length === 0 ? (
@@ -2814,7 +2814,7 @@ export default function App() {
             <div className="font-display" style={{ fontWeight: 700, fontSize: 18, marginTop: 14, marginBottom: 12, textAlign: 'center' }}>Monthly Goals</div>
             <input
               type="month" value={goalMonth} onChange={e => setGoalMonth(e.target.value)}
-              style={{ ...styles.input, borderRadius: 15, marginBottom: 8 }}
+              style={{ ...styles.input, marginBottom: 8 }}
             />
 
             {(() => {
@@ -3688,6 +3688,26 @@ const GLOBAL_CSS = `
 .tabular { font-variant-numeric: tabular-nums; font-feature-settings: 'tnum'; }
 * { box-sizing: border-box; font-family: 'Teleneo', 'Urbanist', system-ui, sans-serif; -webkit-tap-highlight-color: transparent; }
 input, select, textarea, button { font-family: 'Teleneo', 'Urbanist', system-ui, sans-serif; }
+
+/* iOS gives date/month inputs their own native sizing that ignores width:100%,
+   so they end up narrower than the cards beneath them and look misaligned.
+   Resetting appearance makes them honour the same box as every other field. */
+input, select, textarea {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+input[type="date"], input[type="month"] {
+  display: block;
+  text-align: left;
+  min-height: 44px;
+}
+input[type="date"]::-webkit-date-and-time-value,
+input[type="month"]::-webkit-date-and-time-value {
+  text-align: left;
+}
 button { color: inherit; -webkit-appearance: none; appearance: none; -webkit-tap-highlight-color: transparent; }
 * { -ms-overflow-style: none; scrollbar-width: none; }
 ::-webkit-scrollbar { width: 0px; height: 0px; }
