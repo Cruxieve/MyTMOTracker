@@ -621,6 +621,10 @@ const VIRTUAL_GOAL_TAGS = {
     label: 'Essential Rate Plans (Essentials / Saver)',
     match: it => it.category === 'Postpaid Rate Plan' && it.planName && !isPremiumPlanName(it.planName),
   },
+  '__btsPrepaid__': {
+    label: 'Prepaid flagged as BTS',
+    match: it => it.category === 'Prepaid Plan' && !!it.isBTS,
+  },
 };
 function goalTagLabel(tag) {
   return VIRTUAL_GOAL_TAGS[tag] ? VIRTUAL_GOAL_TAGS[tag].label : tag;
@@ -978,6 +982,21 @@ function shiftMonth(ym, delta) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
 }
 
+// Category flags (BYOD, Essential, BTS, etc). Filled magenta when on, quiet
+// outline when off — so the state is obvious at a glance rather than needing
+// you to look at a small checkbox.
+function FlagToggle({ checked, onChange, children }) {
+  return (
+    <label style={checked ? styles.flagToggleOn : styles.flagToggleOff} className="press">
+      <input type="checkbox" checked={checked} onChange={onChange} style={{ display: 'none' }} />
+      <span style={checked ? styles.flagMarkOn : styles.flagMarkOff}>
+        {checked && <Check size={12} strokeWidth={3.2} color="#fff" />}
+      </span>
+      {children}
+    </label>
+  );
+}
+
 function MonthStepper({ value, onChange, label }) {
   const holdTimer = React.useRef(null);
   const holdInterval = React.useRef(null);
@@ -1019,7 +1038,7 @@ function MonthStepper({ value, onChange, label }) {
 }
 
 function SaleModal({ open, onClose, onSave, categories, initialPlan, spiffs, customers, onCreateCustomer, onEditCustomer }) {
-  const emptyDraft = { category: '', baseValue: '', qty: '1', manualAmount: '', planName: '', lines: '1', alreadyProtected: false, isBYOD: false, isEssential: false, isPriority: false };
+  const emptyDraft = { category: '', baseValue: '', qty: '1', manualAmount: '', planName: '', lines: '1', alreadyProtected: false, isBYOD: false, isEssential: false, isPriority: false, isBTS: false };
   const emptyForm = { date: todayInputValue(), notes: '', items: [], customerId: '' };
   const [form, setForm] = useState(emptyForm);
   const [draft, setDraft] = useState(emptyDraft);
@@ -1134,6 +1153,7 @@ function SaleModal({ open, onClose, onSave, categories, initialPlan, spiffs, cus
     if (draft.category === 'Voice Line' && draft.isBYOD) item.isBYOD = true;
     if (draft.category === 'Accessories' && draft.isEssential) item.isEssential = true;
     if (draft.category === 'Visa' && draft.isPriority) item.isPriority = true;
+    if (draft.category === 'Prepaid Plan' && draft.isBTS) item.isBTS = true;
     if (draftSpiffTotal > 0) {
       item.spiffAmount = Math.round(draftSpiffTotal * 100) / 100;
       item.spiffLabels = activeDraftSpiffs.map(s => s.label);
@@ -1493,6 +1513,51 @@ function SaleModal({ open, onClose, onSave, categories, initialPlan, spiffs, cus
             </div>
           )}
 
+          {draft.category === 'Upgrade' && (
+            <FlagToggle
+              checked={draft.alreadyProtected}
+              onChange={e => setDraft({ ...draft, alreadyProtected: e.target.checked })}
+            >
+              Line already has protection
+            </FlagToggle>
+          )}
+
+          {draft.category === 'Accessories' && (
+            <FlagToggle
+              checked={draft.isEssential}
+              onChange={e => setDraft({ ...draft, isEssential: e.target.checked })}
+            >
+              Essential Accessories
+            </FlagToggle>
+          )}
+
+          {draft.category === 'Visa' && (
+            <FlagToggle
+              checked={draft.isPriority}
+              onChange={e => setDraft({ ...draft, isPriority: e.target.checked })}
+            >
+              Priority Customer
+            </FlagToggle>
+          )}
+
+          {draft.category === 'Prepaid Plan' && (
+            <FlagToggle
+              checked={draft.isBTS}
+              onChange={e => setDraft({ ...draft, isBTS: e.target.checked })}
+            >
+              Counts as BTS
+            </FlagToggle>
+          )}
+
+          {draft.category === 'Voice Line' && (
+            <FlagToggle
+              checked={draft.isBYOD}
+              onChange={e => setDraft({ ...draft, isBYOD: e.target.checked })}
+            >
+              Bring your own device (BYOD)
+            </FlagToggle>
+          )}
+
           <button
             className="press"
             style={{
@@ -1505,46 +1570,6 @@ function SaleModal({ open, onClose, onSave, categories, initialPlan, spiffs, cus
             <Plus size={16} strokeWidth={2.6} style={{ marginRight: 6 }} />
             {draftGrandTotal > 0 ? `Add to transaction \u00b7 ${fmtMoney(draftGrandTotal)}` : 'Enter an amount'}
           </button>
-
-          {draft.category === 'Upgrade' && (
-            <label style={{ ...styles.checkboxRowWarn, justifyContent: 'center', textAlign: 'center' }}>
-              <input
-                type="checkbox" checked={draft.alreadyProtected}
-                onChange={e => setDraft({ ...draft, alreadyProtected: e.target.checked })}
-              />
-              Line already has protection
-            </label>
-          )}
-
-          {draft.category === 'Accessories' && (
-            <label style={{ ...styles.checkboxRowWarn, justifyContent: 'center', textAlign: 'center' }}>
-              <input
-                type="checkbox" checked={draft.isEssential}
-                onChange={e => setDraft({ ...draft, isEssential: e.target.checked })}
-              />
-              Essential Accessories
-            </label>
-          )}
-
-          {draft.category === 'Visa' && (
-            <label style={{ ...styles.checkboxRowWarn, justifyContent: 'center', textAlign: 'center' }}>
-              <input
-                type="checkbox" checked={draft.isPriority}
-                onChange={e => setDraft({ ...draft, isPriority: e.target.checked })}
-              />
-              Priority Customer
-            </label>
-          )}
-
-          {draft.category === 'Voice Line' && (
-            <label style={{ ...styles.checkboxRowWarn, justifyContent: 'center', textAlign: 'center' }}>
-              <input
-                type="checkbox" checked={draft.isBYOD}
-                onChange={e => setDraft({ ...draft, isBYOD: e.target.checked })}
-              />
-              Bring your own device (BYOD)
-            </label>
-          )}
         </div>
       )}
 
@@ -2600,17 +2625,7 @@ export default function App() {
                         </defs>
                         <CartesianGrid vertical={false} stroke="var(--border)" />
                         <XAxis dataKey="label" tickLine={false} axisLine={false} tick={{ fontSize: 11, fill: 'var(--ink-faint)' }} />
-                        <Tooltip
-                          cursor={{ fill: 'rgba(226,0,116,0.06)' }}
-                          formatter={(v) => fmtMoney(v)}
-                          contentStyle={{
-                            borderRadius: 12, border: '1px solid var(--border)', fontSize: 12,
-                            boxShadow: 'var(--shadow-md)', background: 'var(--surface)', color: 'var(--ink)',
-                          }}
-                          labelStyle={{ color: 'var(--ink)', fontWeight: 700, marginBottom: 2 }}
-                          itemStyle={{ color: 'var(--ink)' }}
-                        />
-                        <Bar dataKey="total" fill="url(#barGrad)" radius={[6, 6, 0, 0]} animationDuration={620} />
+                        <Bar dataKey="total" fill="url(#barGrad)" radius={[6, 6, 0, 0]} animationDuration={620} isAnimationActive={true} />
                       </BarChart>
                     </ResponsiveContainer>
                   </div>
@@ -3493,6 +3508,7 @@ function SaleRow({ sale, customers, onDelete }) {
     if (it.isBYOD) parts.push('BYOD');
     if (it.isEssential) parts.push('Essential');
     if (it.isPriority) parts.push('Priority');
+    if (it.isBTS) parts.push('BTS');
     if (it.spiffAmount > 0) parts.push(`+${fmtMoneyPlain(it.spiffAmount)} SPIFF`);
     return parts.join(' \u00b7 ');
   }
@@ -3898,11 +3914,29 @@ const styles = {
     width: 20, height: 20, borderRadius: '50%', background: 'var(--accent)',
     display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
   },
-  checkboxRowWarn: {
-    display: 'flex', alignItems: 'center', gap: 8, marginTop: 10,
-    fontSize: 13, fontWeight: 700, color: 'var(--solid-btn-fg)', cursor: 'pointer',
-    background: 'var(--solid-btn-bg)', border: 'none',
-    borderRadius: 11, padding: '9px 11px', accentColor: 'var(--accent)',
+  flagToggleOff: {
+    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 9, marginTop: 10,
+    fontSize: 13, fontWeight: 700, cursor: 'pointer',
+    color: 'var(--ink-soft)', background: 'transparent',
+    border: '1.5px dashed var(--border)', borderRadius: 13, padding: '10px 12px',
+    transition: 'all 180ms ease',
+  },
+  flagToggleOn: {
+    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 9, marginTop: 10,
+    fontSize: 13, fontWeight: 800, cursor: 'pointer', color: '#fff',
+    background: 'linear-gradient(135deg, var(--accent-2) 0%, var(--accent) 60%, var(--accent-deep) 100%)',
+    border: '1.5px solid transparent', borderRadius: 13, padding: '10px 12px',
+    boxShadow: '0 3px 12px rgba(226,0,116,0.32)',
+    transition: 'all 180ms ease',
+  },
+  flagMarkOff: {
+    width: 18, height: 18, borderRadius: 6, flexShrink: 0,
+    border: '1.5px solid var(--ink-faint)', background: 'transparent',
+  },
+  flagMarkOn: {
+    width: 18, height: 18, borderRadius: 6, flexShrink: 0,
+    border: '1.5px solid rgba(255,255,255,0.85)', background: 'rgba(255,255,255,0.22)',
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
   },
   spiffCallout: {
     display: 'flex', alignItems: 'center', gap: 7, marginTop: 12,
